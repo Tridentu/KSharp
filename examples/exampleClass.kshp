@@ -1,0 +1,31 @@
+using Sys.Application;
+
+namespace KSharp.Examples {
+    public class ExampleClass {
+        public property int Health;
+        public property string Name;
+
+        public signal void PlayerDied();
+
+        public void Display(string msg) {
+            qDebug() << "Log:" << msg;
+        }
+
+        public property List<string> Inventory;
+        public property List<int> QuestIDs;
+
+        public void AddItem(string itemName) {
+            this.Inventory.append(itemName); // Qt uses .append()
+            InventoryChanged(this.Inventory);
+        }
+
+        public signal void Damaged(int amount);
+        public slot void TakeDamage(int amount) {
+            this.Health -= amount;
+            Damaged(amount);
+            if (this.Health <= 0) {
+                PlayerDied(); // Transpiler inserts 'emit' here automatically
+            }
+        }
+    }
+}
