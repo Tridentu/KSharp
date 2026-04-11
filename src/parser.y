@@ -19,6 +19,7 @@
  std::vector<KSharpParameter> temp_params;
  std::string currentNamespaceId;
 std::map<std::string, std::string> symbolTable;
+std::map<std::string, std::string> dynamicTypeMap;
 
  void save_to_file(const std::string& filename, const std::string& content)
  {
@@ -120,6 +121,7 @@ std::string apply_namespaced_libraries(std::string body,
                 while ((pos = body.find(kMethod, pos)) != std::string::npos) {
                     // Only replace if it matches the namespace the user actually imported
                     body.replace(pos, kMethod.length(), data.cppTranslation);
+
                     auto_includes.insert(data.requiredHeader);
                     pos += data.cppTranslation.length();
                 }
@@ -168,6 +170,26 @@ std::string process_body(std::string body) {
                 }
                 s_pos += signalName.length() + 1;
             }
+        }
+    }
+
+    for (const auto& prop : parsedClass.properties) {
+        std::string signalName = prop.name + "Changed";
+        // same emit-injection logic as the methods loop
+        size_t s_pos = 0;
+        while ((s_pos = body.find(signalName + "(", s_pos)) != std::string::npos) {
+                // Look back to see if 'emit' is already there
+                bool hasEmit = false;
+                if (s_pos >= 5) {
+                    std::string lead = body.substr(s_pos - 5, 5);
+                    if (lead == "emit ") hasEmit = true;
+                }
+
+                if (!hasEmit) {
+                    body.insert(s_pos, "emit ");
+                    s_pos += 5; // Skip the new 'emit '
+                }
+                s_pos += signalName.length() + 1;
         }
     }
 
@@ -256,7 +278,7 @@ void add_method_to_class(KSharpMethod m) {
 
     for (const auto& imp : ksharp_imports) {
         if (KSharpLibRegistry.count(imp)) {
-            requiredLinkerFlags.insert(LibRegistry.at(imp).linkerFlag);
+            requiredLinkerFlags.insert(KSharpLibRegistry.at(imp).linkerFlag);
         }
     }
 
@@ -328,6 +350,14 @@ void add_method_to_class(KSharpMethod m) {
             ctx["methods"].push_back(m);
         }
     }
+    std::set<std::string> filtered_includes;
+    for (const auto& inc : header_includes) {
+        if (ksharp_imports.count(inc) == 0 &&
+            KSharpNamespaceRegistry.count(inc) == 0) {
+            filtered_includes.insert(inc);
+        }
+    }
+    header_includes = filtered_includes;
     ctx["includes"] = header_includes;
 
     inja::Environment env;
@@ -349,6 +379,8 @@ void add_method_to_class(KSharpMethod m) {
 
 
 %token <sval> IDENTIFIER METHOD_BODY
+
+%type <sval> access_modifier
 
 %token NAMESPACE CLASS PUBLIC PROPERTY SET GET NUMBER LBRACE RBRACE SEMICOLON DOT
 
@@ -397,13 +429,19 @@ inheritance_opt:
     }
     ;
 
+access_modifier:
+    PUBLIC     { $$ = strdup("public"); }
+    | PRIVATE  { $$ = strdup("private"); }
+    | PROTECTED { $$ = strdup("protected"); }
+    ;
+
 class_declaration:
-    PUBLIC CLASS IDENTIFIER inheritance_opt LBRACE {
+    access_modifier CLASS IDENTIFIER inheritance_opt LBRACE {
         // Prepare a new class context
         parsedClass = KSharpClass();
         parsedClass.name = $3;
         parsedClass.namespaceId = currentNamespaceId;
-        parsedClass.accessModifier = "public";
+        parsedClass.accessModifier = $1;
         parsedClass.parentClass = parsedClass.parentClass.empty() ? "QObject" : parsedClass.parentClass;
     } class_body RBRACE {
         printf("Generating Qt/KDE C++ for class: %s\n", $3);
@@ -425,11 +463,11 @@ member_declaration:
 
 
 signal_declaration:
-    PUBLIC SIGNAL VOID IDENTIFIER LBRACE_PAREN parameter_list RBRACE_PAREN SEMICOLON {
+    access_modifier SIGNAL VOID IDENTIFIER LBRACE_PAREN parameter_list RBRACE_PAREN SEMICOLON {
         KSharpMethod s;
         s.name = $4;
         s.returnType = "void";
-        s.accessModifier = "public";
+        s.accessModifier = $1;
         s.isSignal = true; // Add this flag to your struct
         s.parameters = temp_params;
         temp_params.clear();
@@ -441,59 +479,59 @@ signal_declaration:
 
 
 method_declaration:
-    PUBLIC SLOT IDENTIFIER IDENTIFIER LBRACE_PAREN parameter_list RBRACE_PAREN { capture_mode = 1; } METHOD_BODY {
+    access_modifier SLOT IDENTIFIER IDENTIFIER LBRACE_PAREN parameter_list RBRACE_PAREN { capture_mode = 1; } METHOD_BODY {
         KSharpMethod m;
         m.returnType = $3;
         m.name = $4;
         m.isSlot = true; // Mark as slot
         m.body = $9;
         m.parameters = temp_params;
-        m.accessModifier = "public";
+        m.accessModifier = $1;
         add_method_to_class(m);
         temp_params.clear();
         free($3); free($4); free($9);
     }
-    | PUBLIC SLOT VOID IDENTIFIER LBRACE_PAREN parameter_list RBRACE_PAREN { capture_mode = 1; } METHOD_BODY {
+    | access_modifier SLOT VOID IDENTIFIER LBRACE_PAREN parameter_list RBRACE_PAREN { capture_mode = 1; } METHOD_BODY {
         KSharpMethod m;
         m.returnType = "void";
         m.name = $4;
         m.isSlot = true; // Mark as slot
         m.body = $9;
         m.parameters = temp_params;
-        m.accessModifier = "public";
+        m.accessModifier = $1;
         add_method_to_class(m);
         temp_params.clear();
         free($4); free($9);
     }
-    | PUBLIC VOID IDENTIFIER LBRACE_PAREN parameter_list RBRACE_PAREN { capture_mode = 1; } METHOD_BODY {
+    | access_modifier VOID IDENTIFIER LBRACE_PAREN parameter_list RBRACE_PAREN { capture_mode = 1; } METHOD_BODY {
         KSharpMethod m;
         m.returnType = "void";
         m.name = $3;
         m.body = $8;
         m.isSlot = false; // Or handle slot logic here if needed
-        m.accessModifier = "public";
+        m.accessModifier = $1;
         m.parameters = temp_params;
         add_method_to_class(m);
         temp_params.clear();
         free($3); free($8);
     }
-    | PUBLIC IDENTIFIER IDENTIFIER LBRACE_PAREN parameter_list RBRACE_PAREN { capture_mode = 1; } METHOD_BODY {
+    | access_modifier IDENTIFIER IDENTIFIER LBRACE_PAREN parameter_list RBRACE_PAREN { capture_mode = 1; } METHOD_BODY {
         KSharpMethod m;
         m.returnType = $2;
         m.name = $3;
         m.parameters = temp_params;
         m.body = $8;
-        m.accessModifier = "public";
+        m.accessModifier = $1;
         add_method_to_class(m);
         temp_params.clear(); // Clear for the next method
         free($2); free($3); free($8);
     }
-    | PUBLIC IDENTIFIER LBRACE_PAREN parameter_list RBRACE_PAREN { capture_mode = 1; } METHOD_BODY {
+    | access_modifier IDENTIFIER LBRACE_PAREN parameter_list RBRACE_PAREN { capture_mode = 1; } METHOD_BODY {
         KSharpMethod m;
         m.name = $2;
         m.returnType = ""; // No return type implies constructor or error
         m.body = $7;
-        m.accessModifier = "public";
+        m.accessModifier = $1;
         m.parameters = temp_params;
 
         add_method_to_class(m);

@@ -21,7 +21,7 @@ public:
     {% for prop in properties %}
         Q_PROPERTY({{ prop.type }} {{ prop.name }} READ get{{ prop.name }} WRITE set{{ prop.name }} NOTIFY {{ prop.name }}Changed)
         {{ prop.type }} get{{ prop.name }}() const;
-        void set{{ prop.name }}({{ prop.type }} value);
+        void set{{ prop.name }}({% if prop.type == "QString" %}const {{ prop.type }}&{% else %}{{ prop.type }}{% endif %} value);
     {% endfor %}
 
     {% for method in methods %}
@@ -30,10 +30,38 @@ public:
     {% endif %}
     {% endfor %}
 
+private:
+    {% for method in methods %}
+    {% if method.accessModifier == "private" %}
+    {{ method.returnType }} {{ method.name }}({% for param in method.parameters %}{{ param.type }} {{ param.name }}{% if not loop.is_last %}, {% endif %}{% endfor %});
+    {% endif %}
+    {% endfor %}
+
+protected:
+    {% for method in methods %}
+    {% if method.accessModifier == "protected" %}
+    {{ method.returnType }} {{ method.name }}({% for param in method.parameters %}{{ param.type }} {{ param.name }}{% if not loop.is_last %}, {% endif %}{% endfor %});
+    {% endif %}
+    {% endfor %}
+
 public slots:
     {% for slot in slots %}
     {% if slot.accessModifier == "public" %}
 {{ slot.returnType }} {{ slot.name }}({% for p in slot.parameters %}{{ p.type }} {{ p.name }}{% if not loop.is_last %}, {% endif %}{% endfor %});
+    {% endif %}
+    {% endfor %}
+
+private slots:
+    {% for slot in slots %}
+    {% if slot.accessModifier == "private" %}
+    {{ slot.returnType }} {{ slot.name }}({% for p in slot.parameters %}{{ p.type }} {{ p.name }}{% if not loop.is_last %}, {% endif %}{% endfor %});
+    {% endif %}
+    {% endfor %}
+
+protected slots:
+    {% for slot in slots %}
+    {% if slot.accessModifier == "protected" %}
+    {{ slot.returnType }} {{ slot.name }}({% for p in slot.parameters %}{{ p.type }} {{ p.name }}{% if not loop.is_last %}, {% endif %}{% endfor %});
     {% endif %}
     {% endfor %}
 

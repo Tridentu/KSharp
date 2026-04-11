@@ -11,8 +11,17 @@ using namespace {{ namespaceName }};
 {
     // Constructor implementation
     {% for prop in properties %}
-    {% if prop.type == "int" %}m_{{ prop.name }} = 0;{% endif %}
-    {% if prop.type == "QString" %}m_{{ prop.name }} = "";{% endif %}
+    {% if prop.type == "int" %}
+    m_{{ prop.name }} = 0;
+    {% else if prop.type == "QString" %}
+    m_{{ prop.name }} = "";
+    {% else if prop.type == "QStringList" %}
+    // m_{{ prop.name }} default-initializes fine
+    {% else if prop.type == "QList<QString>" %}
+    // m_{{ prop.name }} default-initializes fine
+    {% else if prop.type == "QList<int>" %}
+    // m_{{ prop.name }} default-initializes fine
+    {% endif %}
     {% endfor %}
 
     {{ constructorBody }}
@@ -29,7 +38,7 @@ using namespace {{ namespaceName }};
     return m_{{ prop.name }};
 }
 
-void {{ className }}::set{{ prop.name }}({{ prop.type }} value) {
+void {{ className }}::set{{ prop.name }}({% if prop.type == "QString" %}const {{ prop.type }}&{% else %}{{ prop.type }}{% endif %} value) {
     if (m_{{ prop.name }} == value) return;
     m_{{ prop.name }} = value;
     emit {{ prop.name }}Changed(value);

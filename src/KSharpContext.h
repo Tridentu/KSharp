@@ -72,22 +72,23 @@ static const std::map<std::string, std::map<std::string, KSharpLibMethod>> KShar
         { "Math.Abs",           { "qAbs",         "QtMath" } },
         { "Math.Clamp",         { "qBound",       "QtMath" } }
     }},
-    { "System.Tridentu", {
+    { KSSTD_NAMESPACE + ".Tridentu", {
         { "MessageBox.Show",    { "QMessageBox::information", "QMessageBox" } }
     }}
 };
 
 static const std::map<std::string, std::map<std::string, KSharpLibType>> KSharpTypeRegistry = {
-    { "System", {
+    { KSSTD_NAMESPACE, {
         { "List<string>", { "QStringList", "QStringList" } }
     }}
 };
 
-static const std::map<std::string, KSharpLib> LibRegistry = {
+
+static const std::map<std::string, KSharpLib> KSharpLibRegistry = {
 
 };
 
-static std::map<std::string, std::string> dynamicTypeMap;
+extern std::map<std::string, std::string> dynamicTypeMap;
 
 extern std::set<std::string> ksharp_imports;
 extern std::vector<KSharpClass> fileClasses;
