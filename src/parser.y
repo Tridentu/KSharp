@@ -179,9 +179,9 @@ std::string process_body(std::string body) {
 
     for (std::sregex_iterator i = words_begin; i != words_end; ++i) {
         std::smatch match = *i;
-        std::string type = match.str();
-        std::string name = match.str();
-        std::string args = match.str();
+        std::string type = match.str(1);
+        std::string name = match.str(2);
+        std::string args = match.str(4);
 
         // Update the table so the += connection logic below knows the types!
         symbolTable[name] = type;
@@ -195,20 +195,22 @@ std::string process_body(std::string body) {
         }
         heapAlloc += ");";
 
+        result += body.substr(lastPos, match.position() - lastPos); // passthrough text
         result += heapAlloc;
         lastPos = match.position() + match.length();
     }
     std::regex connectRegex(R"(([a-zA-Z0-9_]+)\.([a-zA-Z0-9_]+)\s*\+=\s*([a-zA-Z0-9_]+)\.([a-zA-Z0-9_]+);)");
     auto conn_begin = std::sregex_iterator(body.begin(), body.end(), connectRegex);
+    auto conn_end = std::sregex_iterator();
 
-    for (std::sregex_iterator i = conn_begin; i != conn_begin; ++i) {
+    for (std::sregex_iterator i = conn_begin; i != conn_end; ++i) {
         std::smatch match = *i;
         result += body.substr(lastPos, match.position() - lastPos);
 
-        std::string sender = match.str();
-        std::string signal = match.str();
-        std::string receiver = match.str();
-        std::string slot = match.str();
+        std::string sender = match.str(1);
+        std::string signal = match.str(2);
+        std::string receiver = match.str(3);
+        std::string slot = match.str(4);
 
         // This is where the barren loop gets its "Soul"
         std::string connStr = "QObject::connect(" + sender + ", &" + get_class_of(sender) + "::" + signal +
@@ -253,7 +255,7 @@ void add_method_to_class(KSharpMethod m) {
     std::set<std::string> requiredLinkerFlags;
 
     for (const auto& imp : ksharp_imports) {
-        if (LibRegistry.count(imp)) {
+        if (KSharpLibRegistry.count(imp)) {
             requiredLinkerFlags.insert(LibRegistry.at(imp).linkerFlag);
         }
     }
@@ -352,7 +354,7 @@ void add_method_to_class(KSharpMethod m) {
 
 %token VOID LBRACE_PAREN RBRACE_PAREN COMMA SLOT SIGNAL COLON L_ANGLE R_ANGLE
 
-%token USING PLUS_EQUAL ASSIGN NEW
+%token USING PLUS_EQUAL ASSIGN NEW PRIVATE PROTECTED
 
 %%
 program:

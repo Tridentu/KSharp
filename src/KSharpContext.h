@@ -60,7 +60,7 @@ struct KSharpLibType {
 };
 
 
-const std::string KSSTD_NAMESPACE = "Sys";
+static const std::string KSSTD_NAMESPACE = "Sys";
 
 std::map<std::string, std::string> ksharp_import_map = {
    {KSSTD_NAMESPACE + ".Application", "QtCore/QCoreApplication"}
@@ -77,11 +77,17 @@ static const std::map<std::string, std::map<std::string, KSharpLibMethod>> KShar
     }}
 };
 
-static const std::map<std::string, std::map<std::string, LibType>> KSharpTypeRegistry = {
+static const std::map<std::string, std::map<std::string, KSharpLibType>> KSharpTypeRegistry = {
     { "System", {
         { "List<string>", { "QStringList", "QStringList" } }
     }}
 };
+
+static const std::map<std::string, KSharpLib> LibRegistry = {
+
+};
+
+static std::map<std::string, std::string> dynamicTypeMap;
 
 extern std::set<std::string> ksharp_imports;
 extern std::vector<KSharpClass> fileClasses;

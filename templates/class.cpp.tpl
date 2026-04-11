@@ -32,7 +32,7 @@ using namespace {{ namespaceName }};
 void {{ className }}::set{{ prop.name }}({{ prop.type }} value) {
     if (m_{{ prop.name }} == value) return;
     m_{{ prop.name }} = value;
-    emit {{ prop.name }}Changed();
+    emit {{ prop.name }}Changed(value);
 }
 {% endfor %}
 

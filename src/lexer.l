@@ -18,6 +18,8 @@
 "slot" { return SLOT; }
 "signal"   { return SIGNAL; }
 "using"    { return USING; }
+"private"   { return PRIVATE; }
+"protected" { return PROTECTED; }
 "int"     { yylval.sval = strdup(yytext); return IDENTIFIER; }
 "string"  { yylval.sval = strdup(yytext); return IDENTIFIER; }
 "void"  {  return VOID; }
