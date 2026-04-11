@@ -34,9 +34,14 @@ std::map<std::string, std::string> symbolTable;
  }
 
  std::string mapType(const std::string& ksharpType) {
+
+    if (dynamicTypeMap.count(ksharpType)) {
+        return dynamicTypeMap[ksharpType];
+    }
+
     if (ksharpType == "string") return "QString";
     if (ksharpType == "int")    return "int";
-    if (ksharpType == "List<string>") return "QStringList";
+
 
     if (ksharpType.find("List<") == 0) {
         std::string inner = ksharpType.substr(5, ksharpType.length() - 6);
@@ -85,6 +90,43 @@ std::string finalize_logic(std::string body) {
     // query your get_class_of() function for each $1 and $3 found.
 
     return result;
+}
+
+void resolve_registry_types(const std::set<std::string>& activeImports,
+                            std::set<std::string>& auto_includes) {
+    for (const std::string& import : activeImports) {
+        if (KSharpTypeRegistry.count(import)) {
+            for (auto const& [kType, data] : KSharpTypeRegistry.at(import)) {
+                // Update the global mapType logic dynamically
+                // (You'll need to modify your mapType function to check this)
+                dynamicTypeMap[kType] = data.cppType;
+                auto_includes.insert(data.requiredHeader);
+            }
+        }
+    }
+}
+
+std::string apply_namespaced_libraries(std::string body,
+                                      const std::set<std::string>& activeImports,
+                                      std::set<std::string>& auto_includes) {
+
+    for (const std::string& import : activeImports) {
+        // Check if this imported namespace exists in our registry
+        if (KSharpNamespaceRegistry.count(import)) {
+            const auto& availableMethods = KSharpNamespaceRegistry.at(import);
+
+            for (auto const& [kMethod, data] : availableMethods) {
+                size_t pos = 0;
+                while ((pos = body.find(kMethod, pos)) != std::string::npos) {
+                    // Only replace if it matches the namespace the user actually imported
+                    body.replace(pos, kMethod.length(), data.cppTranslation);
+                    auto_includes.insert(data.requiredHeader);
+                    pos += data.cppTranslation.length();
+                }
+            }
+        }
+    }
+    return body;
 }
 
 
@@ -196,7 +238,8 @@ void add_method_to_class(KSharpMethod m) {
  {
 
    nlohmann::json ctx;
-    std::set<std::string> header_includes = ksharp_imports;    header_includes.insert("QObject");
+    std::set<std::string> header_includes = ksharp_imports;
+    header_includes.insert("QObject");
 
 
    std::string ns = cls.namespaceId;
@@ -207,6 +250,16 @@ void add_method_to_class(KSharpMethod m) {
         }
 
 
+    std::set<std::string> requiredLinkerFlags;
+
+    for (const auto& imp : ksharp_imports) {
+        if (LibRegistry.count(imp)) {
+            requiredLinkerFlags.insert(LibRegistry.at(imp).linkerFlag);
+        }
+    }
+
+    // Pass this to your Inja template for the Build Script
+    ctx["linkerFlags"] = requiredLinkerFlags;
 
     ctx["className"] = cls.name;
     ctx["parent"] = cls.parentClass;
@@ -252,7 +305,8 @@ void add_method_to_class(KSharpMethod m) {
         nlohmann::json m;
         m["name"] = method.name;
         m["returnType"] = mapType(method.returnType);
-        m["body"] = process_body(method.body);
+        m["body"] = apply_namespaced_libraries(method.body, ksharp_imports, header_includes);
+        m["body"] = process_body(m["body"]);
         m["accessModifier"] = method.accessModifier;
         m["isSlot"] = method.isSlot;
         m["isSignal"] = method.isSignal;

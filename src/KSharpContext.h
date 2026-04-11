@@ -42,10 +42,45 @@ struct KSharpClass {
 
 };
 
+struct KSharpLib {
+    std::string header;
+    std::string linkerFlag;
+    std::map<std::string, std::string> methodMap;
+};
+
+
+struct KSharpLibMethod {
+    std::string cppTranslation;
+    std::string requiredHeader;
+};
+
+struct KSharpLibType {
+    std::string cppType;
+    std::string requiredHeader;
+};
+
+
 const std::string KSSTD_NAMESPACE = "Sys";
 
 std::map<std::string, std::string> ksharp_import_map = {
    {KSSTD_NAMESPACE + ".Application", "QtCore/QCoreApplication"}
+};
+
+static const std::map<std::string, std::map<std::string, KSharpLibMethod>> KSharpNamespaceRegistry = {
+    { KSSTD_NAMESPACE, {
+        { "Console.WriteLine", { "qDebug() << ", "QDebug" } },
+        { "Math.Abs",           { "qAbs",         "QtMath" } },
+        { "Math.Clamp",         { "qBound",       "QtMath" } }
+    }},
+    { "System.Tridentu", {
+        { "MessageBox.Show",    { "QMessageBox::information", "QMessageBox" } }
+    }}
+};
+
+static const std::map<std::string, std::map<std::string, LibType>> KSharpTypeRegistry = {
+    { "System", {
+        { "List<string>", { "QStringList", "QStringList" } }
+    }}
 };
 
 extern std::set<std::string> ksharp_imports;

@@ -1,3 +1,4 @@
+using Sys;
 using Sys.Application;
 
 namespace KSharp.Examples {
@@ -8,7 +9,7 @@ namespace KSharp.Examples {
         public signal void PlayerDied();
 
         public void Display(string msg) {
-            qDebug() << "Log:" << msg;
+            Console.WriteLine("Hello World!");
         }
 
         public property List<string> Inventory;
