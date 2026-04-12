@@ -15,7 +15,7 @@ namespace {{ namespaceName }} {
 {%- for enum in enums %}
 enum class {{ enum.name }} {
     {%- for value in enum.values %}
-    {{ value.name }}{% if not loop.is_last %},{% endif %}
+    {{ value.name }}{% if value.hasExplicitValue %} = {{ value.explicitValue }}{% endif %}{% if not loop.is_last %},{% endif %}
     {%- endfor %}
 };
 {%- endfor %}

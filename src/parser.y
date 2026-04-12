@@ -415,11 +415,11 @@ void add_method_to_class(KSharpMethod m) {
 }
 
 
-%token <sval> IDENTIFIER METHOD_BODY
+%token <sval> IDENTIFIER METHOD_BODY NUMBER
 
 %type <sval> access_modifier
 
-%token NAMESPACE CLASS PUBLIC PROPERTY SET GET NUMBER LBRACE RBRACE SEMICOLON DOT
+%token NAMESPACE CLASS PUBLIC PROPERTY SET GET  LBRACE RBRACE SEMICOLON DOT
 
 %token VOID LBRACE_PAREN RBRACE_PAREN COMMA SLOT SIGNAL COLON L_ANGLE R_ANGLE
 
@@ -490,9 +490,25 @@ enum_value:
         currentEnum.values.push_back(v);
         free($1);
     }
+    | IDENTIFIER ASSIGN NUMBER COMMA {
+        KSharpEnumValue v;
+        v.name = $1;
+        v.hasExplicitValue = true;
+        v.explicitValue = atoi($3);
+        currentEnum.values.push_back(v);
+        free($1);
+    }
     | IDENTIFIER {
         KSharpEnumValue v;
         v.name = $1;
+        currentEnum.values.push_back(v);
+        free($1);
+    }
+    | IDENTIFIER ASSIGN NUMBER {
+        KSharpEnumValue v;
+        v.name = $1;
+        v.hasExplicitValue = true;
+        v.explicitValue = atoi($3);
         currentEnum.values.push_back(v);
         free($1);
     }

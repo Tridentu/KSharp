@@ -57,8 +57,7 @@
 yylval.sval = strdup(yytext);
   return IDENTIFIER;
 }
-[0-9]+  { return NUMBER; }
-
+[0-9]+ { yylval.sval = strdup(yytext); return NUMBER; }
 
 <IN_BLOCK>"{" { brace_count++; block_contents += "{"; }
 <IN_BLOCK>"}" {

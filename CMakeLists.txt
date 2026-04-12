@@ -22,15 +22,15 @@ BISON_TARGET(KSharpParser ${PARSER_SRC} "${CMAKE_CURRENT_BINARY_DIR}/KSharpParse
 FLEX_TARGET(KSharpLexer ${LEXER_SRC} "${CMAKE_CURRENT_BINARY_DIR}/KSharpLexer.cpp")
 ADD_FLEX_BISON_DEPENDENCY(KSharpLexer KSharpParser)
 
-add_executable(ksharp
+add_executable(ksharpc
     src/main.cpp
     ${BISON_KSharpParser_OUTPUTS}
     ${FLEX_KSharpLexer_OUTPUTS}
 )
 
 
-target_include_directories(ksharp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR})
-target_link_libraries(ksharp PRIVATE
+target_include_directories(ksharpc PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR})
+target_link_libraries(ksharpc PRIVATE
     Qt6::Core
     nlohmann_json::nlohmann_json
 )
