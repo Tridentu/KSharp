@@ -289,6 +289,7 @@ void add_method_to_class(KSharpMethod m) {
     ctx["parent"] = cls.parentClass;
     ctx["modifier"] = cls.accessModifier;
     ctx["namespaceName"] = ns;
+    ctx["existingConstructorBody"] = cls.hasCustomConstructor;
     ctx["constructorBody"] = cls.constructorBody;
 
     ctx["properties"] = nlohmann::json::array();
@@ -297,6 +298,7 @@ void add_method_to_class(KSharpMethod m) {
         nlohmann::json p;
         p["name"] = prop.name;
         p["type"] = mapType(prop.type);
+        p["paramType"] = mapParamType(prop.type);
         ctx["properties"].push_back(p);
     }
 
@@ -359,7 +361,14 @@ void add_method_to_class(KSharpMethod m) {
     }
     header_includes = filtered_includes;
     ctx["includes"] = header_includes;
-
+    ctx["hasPrivateMethods"] = std::any_of(cls.methods.begin(), cls.methods.end(),
+        [](const KSharpMethod& m){ return m.accessModifier == "private" && !m.isSlot; });
+    ctx["hasProtectedMethods"] = std::any_of(cls.methods.begin(), cls.methods.end(),
+        [](const KSharpMethod& m){ return m.accessModifier == "protected" && !m.isSlot; });
+    ctx["hasPrivateSlots"] = std::any_of(cls.methods.begin(), cls.methods.end(),
+        [](const KSharpMethod& m){ return m.accessModifier == "private" && m.isSlot; });
+    ctx["hasProtectedSlots"] = std::any_of(cls.methods.begin(), cls.methods.end(),
+        [](const KSharpMethod& m){ return m.accessModifier == "protected" && m.isSlot; });
     inja::Environment env;
     try {
         std::string header = env.render_file("templates/class.h.tpl", ctx);
@@ -489,7 +498,7 @@ method_declaration:
         m.accessModifier = $1;
         add_method_to_class(m);
         temp_params.clear();
-        free($3); free($4); free($9);
+        free($1); free($3); free($4); free($9);
     }
     | access_modifier SLOT VOID IDENTIFIER LBRACE_PAREN parameter_list RBRACE_PAREN { capture_mode = 1; } METHOD_BODY {
         KSharpMethod m;
@@ -501,7 +510,7 @@ method_declaration:
         m.accessModifier = $1;
         add_method_to_class(m);
         temp_params.clear();
-        free($4); free($9);
+        free($1); free($4); free($9);
     }
     | access_modifier VOID IDENTIFIER LBRACE_PAREN parameter_list RBRACE_PAREN { capture_mode = 1; } METHOD_BODY {
         KSharpMethod m;
@@ -513,7 +522,7 @@ method_declaration:
         m.parameters = temp_params;
         add_method_to_class(m);
         temp_params.clear();
-        free($3); free($8);
+        free($1); free($3); free($8);
     }
     | access_modifier IDENTIFIER IDENTIFIER LBRACE_PAREN parameter_list RBRACE_PAREN { capture_mode = 1; } METHOD_BODY {
         KSharpMethod m;
@@ -524,7 +533,7 @@ method_declaration:
         m.accessModifier = $1;
         add_method_to_class(m);
         temp_params.clear(); // Clear for the next method
-        free($2); free($3); free($8);
+        free($1); free($2); free($3); free($8);
     }
     | access_modifier IDENTIFIER LBRACE_PAREN parameter_list RBRACE_PAREN { capture_mode = 1; } METHOD_BODY {
         KSharpMethod m;
@@ -537,7 +546,7 @@ method_declaration:
         add_method_to_class(m);
 
         temp_params.clear();
-        free($2); free($7);
+        free($1); free($2); free($7);
     }
     ;
 
