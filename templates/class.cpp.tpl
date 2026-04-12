@@ -1,11 +1,8 @@
 #include "{{ className }}.h"
 
-
 {%- if namespaceName %}
 using namespace {{ namespaceName }};
 {%- endif %}
-
-
 {{ className }}::{{ className }}(QObject* parent)
 : {{ parent }}(parent)
 {
@@ -21,13 +18,10 @@ using namespace {{ namespaceName }};
         {{ constructorBody }}
     {%- endif %}
 }
-
 {{ className }}::~{{ className }}()
 {
     // Destructor implementation
 }
-
-
 {%- for prop in properties %}
 {{ prop.type }} {{ className }}::get{{ prop.name }}() const {
     {%- if prop.hasCustomGetter %}
@@ -36,7 +30,6 @@ using namespace {{ namespaceName }};
     return m_{{ prop.name }};
     {%- endif %}
 }
-
 void {{ className }}::set{{ prop.name }}({{ prop.paramType }} value) {
     {%- if prop.hasCustomSetter %}
     {{ prop.setterBody }}
@@ -47,18 +40,15 @@ void {{ className }}::set{{ prop.name }}({{ prop.paramType }} value) {
     {%- endif %}
 }
 {%- endfor %}
-
-{% for method in methods %}
+{%- for method in methods %}
 {{ method.returnType }} {{ className }}::{{ method.name }}({% for p in method.parameters %}{{ p.type }} {{ p.name }}{% if not loop.is_last %}, {% endif %}{% endfor %}) {
     // Generated Body
     {{ method.body }}
 }
-{% endfor %}
-
-
-{% for slot in slots %}
+{%- endfor %}
+{%- for slot in slots %}
 {{ slot.returnType }} {{ className }}::{{ slot.name }}({% for p in slot.parameters %}{{ p.type }} {{ p.name }}{% if not loop.is_last %}, {% endif %}{% endfor %}) {
     // Generated Body
     {{ slot.body }}
 }
-{% endfor %}
+{%- endfor %}

@@ -8,10 +8,11 @@
  #include <map>
  #include <regex>
  #include "src/KSharpContext.h"
-#include <inja/inja.hpp>
-#include <nlohmann/json.hpp>
-std::vector<KSharpClass> fileClasses;
-std::vector<KSharpEnum> fileEnums;
+ #include <inja/inja.hpp>
+ #include <nlohmann/json.hpp>
+ std::vector<KSharpClass> fileClasses;
+ std::vector<KSharpEnum> fileEnums;
+ std::vector<KSharpInterface> fileInterfaces;
  std::set<std::string> ksharp_imports;
  KSharpClass parsedClass;
  int capture_mode = 0;
@@ -19,10 +20,12 @@ std::vector<KSharpEnum> fileEnums;
  int yylex();
  std::vector<KSharpParameter> temp_params;
  std::string currentNamespaceId;
-std::map<std::string, std::string> symbolTable;
-std::map<std::string, std::string> dynamicTypeMap;
+ std::map<std::string, std::string> symbolTable;
+ std::map<std::string, std::string> dynamicTypeMap;
  KSharpProperty currentProp;
  KSharpEnum currentEnum;
+ KSharpInterface currentInterface;
+ extern std::string projectName;
 int isStatic_flag = 0;
 
  void save_to_file(const std::string& filename, const std::string& content)
@@ -292,6 +295,30 @@ void add_method_to_class(KSharpMethod m) {
     // Pass this to your Inja template for the Build Script
     ctx["linkerFlags"] = requiredLinkerFlags;
 
+
+    ctx["interfaces"] = nlohmann::json::array();
+    for (const auto& iface : fileInterfaces) {
+        if (iface.namespaceId == cls.namespaceId) {
+            nlohmann::json i;
+            i["name"] = iface.name;
+            i["methods"] = nlohmann::json::array();
+            for (const auto& method : iface.methods) {
+                nlohmann::json m;
+                m["name"] = method.name;
+                m["returnType"] = mapType(method.returnType);
+                m["parameters"] = nlohmann::json::array();
+                for (const auto& p : method.parameters) {
+                    nlohmann::json param;
+                    param["name"] = p.name;
+                    param["type"] = mapParamType(p.type);
+                    m["parameters"].push_back(param);
+                }
+                i["methods"].push_back(m);
+            }
+            ctx["interfaces"].push_back(i);
+        }
+    }
+
     ctx["className"] = cls.name;
     ctx["parent"] = cls.parentClass;
     ctx["modifier"] = cls.accessModifier;
@@ -410,6 +437,35 @@ void add_method_to_class(KSharpMethod m) {
     }
  }
 
+ void generate_cmake(const std::string& projectName) {
+    nlohmann::json ctx;
+    ctx["projectName"] = projectName;
+
+    ctx["classes"] = nlohmann::json::array();
+    for (const auto& cls : fileClasses) {
+        ctx["classes"].push_back(cls.name);
+    }
+
+    ctx["linkerFlags"] = nlohmann::json::array();
+    std::set<std::string> flags;
+    for (const auto& imp : ksharp_imports) {
+        if (KSharpLibRegistry.count(imp)) {
+            flags.insert(KSharpLibRegistry.at(imp).linkerFlag);
+        }
+    }
+    for (const auto& f : flags) {
+        ctx["linkerFlags"].push_back(f);
+    }
+
+    inja::Environment env;
+    try {
+        std::string cmake = env.render_file("templates/CMakeLists.txt.tpl", ctx);
+        save_to_file("CMakeLists.txt", cmake);
+    } catch (std::exception& e) {
+        fprintf(stderr, "K# Template Error: %s\n", e.what());
+    }
+}
+
 %}
 
 %union {
@@ -427,7 +483,7 @@ void add_method_to_class(KSharpMethod m) {
 
 %token USING PLUS_EQUAL ASSIGN NEW PRIVATE PROTECTED
 
-%token ENUM STATIC
+%token ENUM STATIC INTERFACE
 
 %%
 program:
@@ -435,6 +491,7 @@ program:
         for (auto& cls: fileClasses) {
             generate_cpp_class(cls);
         }
+        generate_cmake(projectName);
     }
     ;
 
@@ -443,6 +500,7 @@ prog_elements:
     | prog_elements namespace_definition
     | prog_elements class_declaration
     | prog_elements enum_declaration
+    | prog_elements interface_declaration
     ;
 
 namespace_definition:
@@ -525,6 +583,46 @@ access_modifier:
 method_prefix:
     access_modifier           { $$ = strdup($1); isStatic_flag = 0; free($1); }
     | access_modifier STATIC  { $$ = strdup($1); isStatic_flag = 1; free($1); }
+    ;
+
+interface_declaration:
+    access_modifier INTERFACE IDENTIFIER LBRACE {
+        currentInterface = KSharpInterface();
+        currentInterface.name = $3;
+        currentInterface.namespaceId = currentNamespaceId;
+        currentInterface.accessModifier = $1;
+        free($1);
+    } interface_body RBRACE {
+        fileInterfaces.push_back(currentInterface);
+        free($3);
+    }
+    ;
+
+interface_body:
+    | interface_body interface_method
+    ;
+
+interface_method:
+    IDENTIFIER IDENTIFIER LBRACE_PAREN parameter_list RBRACE_PAREN SEMICOLON {
+        KSharpMethod m;
+        m.returnType = $1;
+        m.name = $2;
+        m.parameters = temp_params;
+        m.accessModifier = "public";
+        temp_params.clear();
+        currentInterface.methods.push_back(m);
+        free($1); free($2);
+    }
+    | VOID IDENTIFIER LBRACE_PAREN parameter_list RBRACE_PAREN SEMICOLON {
+        KSharpMethod m;
+        m.returnType = "void";
+        m.name = $2;
+        m.parameters = temp_params;
+        m.accessModifier = "public";
+        temp_params.clear();
+        currentInterface.methods.push_back(m);
+        free($2);
+    }
     ;
 
 class_declaration:

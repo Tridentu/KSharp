@@ -3,11 +3,13 @@
 #include <QFile>
 #include <QDebug>
 #include <cstdio>
+#include <QFileInfo>
 
 #include "KSharpParser.h"
 extern FILE *yyin;
 extern int yyparse();
-
+extern void yyrestart(FILE*);
+std::string projectName;
 
 int main(int argc, char** argv){
     QCoreApplication app(argc, argv);
@@ -15,10 +17,10 @@ int main(int argc, char** argv){
     QCoreApplication::setApplicationVersion("0.1.0");
 
     QCommandLineParser parserCmd;
-    parserCmd.setApplicationDescription("K# Compiler");
+    parserCmd.setApplicationDescription("ksharpc - The K# Compiler");
     parserCmd.addHelpOption();
     parserCmd.addVersionOption();
-    parserCmd.addPositionalArgument("source", "The .kshp source file to compile");
+    parserCmd.addPositionalArgument("source", "One or more .kshp source files to compile");
 
     parserCmd.process(app);
 
@@ -28,33 +30,45 @@ int main(int argc, char** argv){
         parserCmd.showHelp(1);
     }
 
-    QString fileName = args.at(0);
-    if (!fileName.endsWith(".kshp", Qt::CaseInsensitive)) {
-        qCritical() << "K# Command Error: Input file must have a .kshp extension.";
-        return 1;
+    QString firstName = args.at(0);
+    firstName = QFileInfo(firstName).baseName();
+    extern std::string projectName;
+    projectName = firstName.toStdString();
+
+    for (const QString& fileName : args) {
+        if (!fileName.endsWith(".kshp", Qt::CaseInsensitive)) {
+            qCritical() << "K# Command Error: Input file must have a .kshp extension:" << fileName;
+            return 1;
+        }
+
+        QFile file(fileName);
+        if (!file.open(QIODevice::ReadOnly)) {
+            qCritical() << "K# Command Error: Could not open file" << fileName;
+            return 1;
+        }
+
+        FILE *myfile = fdopen(file.handle(), "r");
+        if (!myfile) {
+            qCritical() << "K# Command Error: Failed to map file descriptor for" << fileName;
+            return 1;
+        }
+
+        qInfo() << "[ksharpc]: Compiling" << fileName;
+
+        yyrestart(myfile);
+        yyin = myfile;
+
+        int result = yyparse();
+        file.close();
+
+        if (result != 0) {
+            qCritical() << "K# Command Error: Compilation failed for" << fileName;
+            return result;
+        }
     }
 
-    QFile file(fileName);
+    qInfo() << "[ksharpc]: Compilation successful.";
 
-    if (!file.open(QIODevice::ReadOnly)) {
-        qCritical() << "K# Command Error: Could not open file" << fileName;
-        return 1;
-    }
-
-    FILE *myfile = fdopen(file.handle(), "r");
-    if (!myfile) {
-        qCritical() << "K# Command Error: Failed to map file descriptor.";
-        return 1;
-    }
-
-    yyin = myfile;
-
-    int result = yyparse();
-
-    // QFile will close the handle when it goes out of scope,
-    // but it's good practice to be explicit.
-    file.close();
-
-    return result;
+    return 0;
 
 }

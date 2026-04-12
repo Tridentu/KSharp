@@ -20,24 +20,32 @@ enum class {{ enum.name }} {
 };
 {%- endfor %}
 
+{%- for iface in interfaces %}
+class {{ iface.name }} {
+public:
+    virtual ~{{ iface.name }}() = default;
+    {%- for method in iface.methods %}
+    virtual {{ method.returnType }} {{ method.name }}({% for p in method.parameters %}{{ p.type }} {{ p.name }}{% if not loop.is_last %}, {% endif %}{% endfor %}) = 0;
+    {%- endfor %}
+};
+
+{%- endfor %}
+
 class {{ className }} : {{ modifier }} {{ parent }} {
     Q_OBJECT
 public:
     explicit {{ className }}(QObject* parent = nullptr);
     virtual ~{{ className }}();
-
     {%- for prop in properties %}
         Q_PROPERTY({{ prop.type }} {{ prop.name }} READ get{{ prop.name }} WRITE set{{ prop.name }} NOTIFY {{ prop.name }}Changed)
         {{ prop.type }} get{{ prop.name }}() const;
         void set{{ prop.name }}({{ prop.paramType }} value);
     {%- endfor %}
-
     {%- for method in methods %}
     {%- if method.accessModifier == "public" %}
     {{ method.returnType }} {{ method.name }}({% for param in method.parameters %}{{ param.type }} {{ param.name }}{% if not loop.is_last %}, {% endif %}{% endfor %});
     {%- endif %}
     {%- endfor %}
-
 {%- if hasPrivateMethods %}
 private:
     {%- for method in methods %}

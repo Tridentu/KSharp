@@ -19,6 +19,9 @@ struct KSharpMethod {
     bool isSlot = false;
     bool isSignal = false;
     bool isStatic = false;
+    bool isAbstract = false;
+    bool isOverride = false;
+    bool isVirtual = false;
     std::string returnType;
     std::string accessModifier;
     std::vector<KSharpParameter> parameters;
@@ -45,6 +48,13 @@ struct KSharpProperty {
     bool hasCustomGetter = false;
     bool hasCustomSetter = false;
     bool isStatic = false;
+};
+
+struct KSharpInterface {
+    std::string name;
+    std::string namespaceId;
+    std::string accessModifier;
+    std::vector<KSharpMethod> methods;
 };
 
 struct KSharpClass {
@@ -120,6 +130,9 @@ extern std::map<std::string, std::string> dynamicTypeMap;
 extern std::set<std::string> ksharp_imports;
 extern std::vector<KSharpClass> fileClasses;
 extern std::vector<KSharpEnum> fileEnums;
+extern std::vector<KSharpInterface> fileInterfaces;
 extern KSharpClass parsedClass;
 extern KSharpProperty currentProp;
 extern KSharpEnum currentEnum;
+extern KSharpInterface currentInterface;
+

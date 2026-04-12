@@ -18,6 +18,8 @@
 "enum" { return ENUM; }
 "slot" { return SLOT; }
 "signal"   { return SIGNAL; }
+"interface" { return INTERFACE; }
+
 "using"    { return USING; }
 "private"   { return PRIVATE; }
 "protected" { return PROTECTED; }
