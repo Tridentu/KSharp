@@ -32,9 +32,9 @@ namespace KSharp.Examples {
     }
 
     public enum PlayerState {
-        Idle,
-        Walking,
-        Running,
-        Dead
+        Idle = 0,
+        Walking = 2,
+        Running = 4,
+        Dead = 6
     }
 }

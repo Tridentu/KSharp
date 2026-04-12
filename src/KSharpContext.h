@@ -18,6 +18,7 @@ struct KSharpMethod {
     std::string body;
     bool isSlot = false;
     bool isSignal = false;
+    bool isStatic = false;
     std::string returnType;
     std::string accessModifier;
     std::vector<KSharpParameter> parameters;
@@ -43,6 +44,7 @@ struct KSharpProperty {
     std::string setterBody;
     bool hasCustomGetter = false;
     bool hasCustomSetter = false;
+    bool isStatic = false;
 };
 
 struct KSharpClass {

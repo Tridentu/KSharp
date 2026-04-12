@@ -23,6 +23,7 @@ std::map<std::string, std::string> symbolTable;
 std::map<std::string, std::string> dynamicTypeMap;
  KSharpProperty currentProp;
  KSharpEnum currentEnum;
+int isStatic_flag = 0;
 
  void save_to_file(const std::string& filename, const std::string& content)
  {
@@ -299,7 +300,6 @@ void add_method_to_class(KSharpMethod m) {
     ctx["constructorBody"] = cls.constructorBody;
 
     ctx["properties"] = nlohmann::json::array();
-
     for (const auto& prop : cls.properties) {
         nlohmann::json p;
         p["name"] = prop.name;
@@ -309,6 +309,7 @@ void add_method_to_class(KSharpMethod m) {
         p["hasCustomSetter"] = prop.hasCustomSetter;
         p["getterBody"] = prop.getterBody;
         p["setterBody"] = prop.setterBody;
+        p["isStatic"] = prop.isStatic;
         ctx["properties"].push_back(p);
     }
 
@@ -346,6 +347,7 @@ void add_method_to_class(KSharpMethod m) {
         m["accessModifier"] = method.accessModifier;
         m["isSlot"] = method.isSlot;
         m["isSignal"] = method.isSignal;
+        m["isStatic"] = method.isStatic;
         m["parameters"] = nlohmann::json::array();
         for (const auto& p : method.parameters) {
             nlohmann::json param;
@@ -417,7 +419,7 @@ void add_method_to_class(KSharpMethod m) {
 
 %token <sval> IDENTIFIER METHOD_BODY NUMBER
 
-%type <sval> access_modifier
+%type <sval> access_modifier method_prefix
 
 %token NAMESPACE CLASS PUBLIC PROPERTY SET GET  LBRACE RBRACE SEMICOLON DOT
 
@@ -425,7 +427,7 @@ void add_method_to_class(KSharpMethod m) {
 
 %token USING PLUS_EQUAL ASSIGN NEW PRIVATE PROTECTED
 
-%token ENUM
+%token ENUM STATIC
 
 %%
 program:
@@ -520,8 +522,13 @@ access_modifier:
     | PROTECTED { $$ = strdup("protected"); }
     ;
 
+method_prefix:
+    access_modifier           { $$ = strdup($1); isStatic_flag = 0; free($1); }
+    | access_modifier STATIC  { $$ = strdup($1); isStatic_flag = 1; free($1); }
+    ;
+
 class_declaration:
-    access_modifier CLASS IDENTIFIER inheritance_opt LBRACE {
+    method_prefix CLASS IDENTIFIER inheritance_opt LBRACE {
         // Prepare a new class context
         parsedClass = KSharpClass();
         parsedClass.name = $3;
@@ -531,7 +538,7 @@ class_declaration:
     } class_body RBRACE {
         printf("Generating Qt/KDE C++ for class: %s\n", $3);
         fileClasses.push_back(parsedClass);
-        free($3);
+        free($1); free($3);
     }
     ;
 
@@ -549,7 +556,7 @@ member_declaration:
 
 
 signal_declaration:
-    access_modifier SIGNAL VOID IDENTIFIER LBRACE_PAREN parameter_list RBRACE_PAREN SEMICOLON {
+    method_prefix SIGNAL VOID IDENTIFIER LBRACE_PAREN parameter_list RBRACE_PAREN SEMICOLON {
         KSharpMethod s;
         s.name = $4;
         s.returnType = "void";
@@ -565,19 +572,20 @@ signal_declaration:
 
 
 method_declaration:
-    access_modifier SLOT IDENTIFIER IDENTIFIER LBRACE_PAREN parameter_list RBRACE_PAREN { capture_mode = 1; } METHOD_BODY {
+    method_prefix SLOT IDENTIFIER IDENTIFIER LBRACE_PAREN parameter_list RBRACE_PAREN { capture_mode = 1; } METHOD_BODY {
         KSharpMethod m;
         m.returnType = $3;
         m.name = $4;
         m.isSlot = true; // Mark as slot
         m.body = $9;
         m.parameters = temp_params;
+        m.isStatic = isStatic_flag;
         m.accessModifier = $1;
         add_method_to_class(m);
         temp_params.clear();
         free($1); free($3); free($4); free($9);
     }
-    | access_modifier SLOT VOID IDENTIFIER LBRACE_PAREN parameter_list RBRACE_PAREN { capture_mode = 1; } METHOD_BODY {
+    | method_prefix SLOT VOID IDENTIFIER LBRACE_PAREN parameter_list RBRACE_PAREN { capture_mode = 1; } METHOD_BODY {
         KSharpMethod m;
         m.returnType = "void";
         m.name = $4;
@@ -585,11 +593,12 @@ method_declaration:
         m.body = $9;
         m.parameters = temp_params;
         m.accessModifier = $1;
+        m.isStatic = isStatic_flag;
         add_method_to_class(m);
         temp_params.clear();
         free($1); free($4); free($9);
     }
-    | access_modifier VOID IDENTIFIER LBRACE_PAREN parameter_list RBRACE_PAREN { capture_mode = 1; } METHOD_BODY {
+    | method_prefix VOID IDENTIFIER LBRACE_PAREN parameter_list RBRACE_PAREN { capture_mode = 1; } METHOD_BODY {
         KSharpMethod m;
         m.returnType = "void";
         m.name = $3;
@@ -598,30 +607,31 @@ method_declaration:
         m.accessModifier = $1;
         m.parameters = temp_params;
         add_method_to_class(m);
+        m.isStatic = isStatic_flag;
         temp_params.clear();
         free($1); free($3); free($8);
     }
-    | access_modifier IDENTIFIER IDENTIFIER LBRACE_PAREN parameter_list RBRACE_PAREN { capture_mode = 1; } METHOD_BODY {
+    | method_prefix IDENTIFIER IDENTIFIER LBRACE_PAREN parameter_list RBRACE_PAREN { capture_mode = 1; } METHOD_BODY {
         KSharpMethod m;
         m.returnType = $2;
         m.name = $3;
         m.parameters = temp_params;
         m.body = $8;
         m.accessModifier = $1;
+        m.isStatic = isStatic_flag;
         add_method_to_class(m);
         temp_params.clear(); // Clear for the next method
         free($1); free($2); free($3); free($8);
     }
-    | access_modifier IDENTIFIER LBRACE_PAREN parameter_list RBRACE_PAREN { capture_mode = 1; } METHOD_BODY {
+    | method_prefix IDENTIFIER LBRACE_PAREN parameter_list RBRACE_PAREN { capture_mode = 1; } METHOD_BODY {
         KSharpMethod m;
         m.name = $2;
         m.returnType = ""; // No return type implies constructor or error
         m.body = $7;
         m.accessModifier = $1;
         m.parameters = temp_params;
-
+        m.isStatic = isStatic_flag;  // move BEFORE add_method_to_class(m)
         add_method_to_class(m);
-
         temp_params.clear();
         free($1); free($2); free($7);
     }
@@ -669,6 +679,7 @@ property_declaration:
         KSharpProperty p;
         p.type = $3;
         p.name = $4;
+        p.accessModifier = "public";
         symbolTable[$4] = mapType($3);
         parsedClass.properties.push_back(p);
         free($3); free($4);
@@ -682,6 +693,16 @@ property_declaration:
     }  property_accessors RBRACE {
         parsedClass.properties.push_back(currentProp);
         free($3); free($4);
+    }
+    | access_modifier STATIC PROPERTY IDENTIFIER IDENTIFIER SEMICOLON {
+        KSharpProperty p;
+        p.type = $4;
+        p.name = $5;
+        p.isStatic = true;
+        p.accessModifier = $1;
+        symbolTable[$5] = mapType($4);
+        parsedClass.properties.push_back(p);
+        free($1); free($4); free($5);
     }
     ;
 %%
