@@ -10,7 +10,8 @@
  #include "src/KSharpContext.h"
 #include <inja/inja.hpp>
 #include <nlohmann/json.hpp>
- std::vector<KSharpClass> fileClasses;
+std::vector<KSharpClass> fileClasses;
+std::vector<KSharpEnum> fileEnums;
  std::set<std::string> ksharp_imports;
  KSharpClass parsedClass;
  int capture_mode = 0;
@@ -20,6 +21,8 @@
  std::string currentNamespaceId;
 std::map<std::string, std::string> symbolTable;
 std::map<std::string, std::string> dynamicTypeMap;
+ KSharpProperty currentProp;
+ KSharpEnum currentEnum;
 
  void save_to_file(const std::string& filename, const std::string& content)
  {
@@ -34,16 +37,18 @@ std::map<std::string, std::string> dynamicTypeMap;
     }
  }
 
- std::string mapType(const std::string& ksharpType) {
-
-    if (dynamicTypeMap.count(ksharpType)) {
-        return dynamicTypeMap[ksharpType];
+std::string mapType(const std::string& ksharpType) {
+    // Check primitives first
+    if (KSharpPrimitives.count(ksharpType)) {
+        return KSharpPrimitives.at(ksharpType);
     }
 
-    if (ksharpType == "string") return "QString";
-    if (ksharpType == "int")    return "int";
+    // Then dynamic types from registry
+    if (dynamicTypeMap.count(ksharpType)) {
+        return dynamicTypeMap.at(ksharpType);
+    }
 
-
+    // Generic list handling
     if (ksharpType.find("List<") == 0) {
         std::string inner = ksharpType.substr(5, ksharpType.length() - 6);
         return "QList<" + mapType(inner) + ">";
@@ -62,7 +67,8 @@ std::string mapImport(const std::string& imp) {
 std::string mapParamType(const std::string& type) {
     std::string mapped = mapType(type);
     // If it's a class/container (QString, QList, QStringList), pass by const ref
-    if (mapped == "QString" || mapped.find("List") != std::string::npos) {
+   if (mapped == "QString" || mapped == "QChar" ||
+        mapped.find("List") != std::string::npos) {
         return "const " + mapped + "&";
     }
     return mapped; // int, float, etc. stay as-is
@@ -299,6 +305,10 @@ void add_method_to_class(KSharpMethod m) {
         p["name"] = prop.name;
         p["type"] = mapType(prop.type);
         p["paramType"] = mapParamType(prop.type);
+        p["hasCustomGetter"] = prop.hasCustomGetter;
+        p["hasCustomSetter"] = prop.hasCustomSetter;
+        p["getterBody"] = prop.getterBody;
+        p["setterBody"] = prop.setterBody;
         ctx["properties"].push_back(p);
     }
 
@@ -354,7 +364,7 @@ void add_method_to_class(KSharpMethod m) {
     }
     std::set<std::string> filtered_includes;
     for (const auto& inc : header_includes) {
-        if (ksharp_imports.count(inc) == 0 &&
+        if (ksharp_import_map.count(inc) == 0 &&
             KSharpNamespaceRegistry.count(inc) == 0) {
             filtered_includes.insert(inc);
         }
@@ -369,6 +379,24 @@ void add_method_to_class(KSharpMethod m) {
         [](const KSharpMethod& m){ return m.accessModifier == "private" && m.isSlot; });
     ctx["hasProtectedSlots"] = std::any_of(cls.methods.begin(), cls.methods.end(),
         [](const KSharpMethod& m){ return m.accessModifier == "protected" && m.isSlot; });
+
+    ctx["enums"] = nlohmann::json::array();
+    for (const auto& enm : fileEnums) {
+        if (enm.namespaceId == cls.namespaceId) {
+            nlohmann::json e;
+            e["name"] = enm.name;
+            e["values"] = nlohmann::json::array();
+            for (const auto& v : enm.values) {
+                nlohmann::json val;
+                val["name"] = v.name;
+                val["hasExplicitValue"] = v.hasExplicitValue;
+                val["explicitValue"] = v.explicitValue;
+                e["values"].push_back(val);
+            }
+            ctx["enums"].push_back(e);
+        }
+    }
+
     inja::Environment env;
     try {
         std::string header = env.render_file("templates/class.h.tpl", ctx);
@@ -397,6 +425,8 @@ void add_method_to_class(KSharpMethod m) {
 
 %token USING PLUS_EQUAL ASSIGN NEW PRIVATE PROTECTED
 
+%token ENUM
+
 %%
 program:
     prog_elements {
@@ -410,6 +440,7 @@ prog_elements:
     | prog_elements using_statement
     | prog_elements namespace_definition
     | prog_elements class_declaration
+    | prog_elements enum_declaration
     ;
 
 namespace_definition:
@@ -435,6 +466,35 @@ inheritance_opt:
     }
     | {
 
+    }
+    ;
+
+enum_declaration:
+    PUBLIC ENUM IDENTIFIER LBRACE enum_values RBRACE {
+        currentEnum.name = $3;
+        currentEnum.namespaceId = currentNamespaceId;
+        fileEnums.push_back(currentEnum);
+        currentEnum = KSharpEnum();
+        free($3);
+    }
+    ;
+
+enum_values:
+    | enum_values enum_value
+    ;
+
+enum_value:
+    IDENTIFIER COMMA {
+        KSharpEnumValue v;
+        v.name = $1;
+        currentEnum.values.push_back(v);
+        free($1);
+    }
+    | IDENTIFIER {
+        KSharpEnumValue v;
+        v.name = $1;
+        currentEnum.values.push_back(v);
+        free($1);
     }
     ;
 
@@ -467,6 +527,7 @@ member_declaration:
     property_declaration
     | method_declaration
     | signal_declaration
+    | enum_declaration
     ;
 
 
@@ -570,13 +631,40 @@ parameter:
     }
     ;
 
+property_accessors:
+    | property_accessors property_accessor
+    ;
+
+property_accessor:
+    GET { capture_mode = 1; } METHOD_BODY {
+        currentProp.hasCustomGetter = true;
+        currentProp.getterBody = process_body($3);
+        free($3);
+    }
+    | SET { capture_mode = 1; } METHOD_BODY {
+        currentProp.hasCustomSetter = true;
+        currentProp.setterBody = process_body($3);
+        free($3);
+    }
+    ;
+
 property_declaration:
-    PUBLIC PROPERTY IDENTIFIER IDENTIFIER SEMICOLON {
+     PUBLIC PROPERTY IDENTIFIER IDENTIFIER SEMICOLON {
         KSharpProperty p;
         p.type = $3;
         p.name = $4;
         symbolTable[$4] = mapType($3);
         parsedClass.properties.push_back(p);
+        free($3); free($4);
+    }
+    | PUBLIC PROPERTY IDENTIFIER IDENTIFIER LBRACE {
+       currentProp = KSharpProperty();
+        currentProp.type = $3;
+        currentProp.name = $4;
+        currentProp.accessModifier = "public";
+        symbolTable[$4] = mapType($3);
+    }  property_accessors RBRACE {
+        parsedClass.properties.push_back(currentProp);
         free($3); free($4);
     }
     ;

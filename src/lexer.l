@@ -15,12 +15,17 @@
 "class"  { return CLASS; }
 "public" { return PUBLIC; }
 "property" { return PROPERTY; }
+"enum" { return ENUM; }
 "slot" { return SLOT; }
 "signal"   { return SIGNAL; }
 "using"    { return USING; }
 "private"   { return PRIVATE; }
 "protected" { return PROTECTED; }
 "int"     { yylval.sval = strdup(yytext); return IDENTIFIER; }
+"float"  { yylval.sval = strdup(yytext); return IDENTIFIER; }
+"bool"   { yylval.sval = strdup(yytext); return IDENTIFIER; }
+"double" { yylval.sval = strdup(yytext); return IDENTIFIER; }
+"char"   { yylval.sval = strdup(yytext); return IDENTIFIER; }
 "string"  { yylval.sval = strdup(yytext); return IDENTIFIER; }
 "void"  {  return VOID; }
 "new"   { return NEW; }

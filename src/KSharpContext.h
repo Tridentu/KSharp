@@ -23,11 +23,26 @@ struct KSharpMethod {
     std::vector<KSharpParameter> parameters;
 };
 
+struct KSharpEnumValue {
+    std::string name;
+    bool hasExplicitValue = false;
+    int explicitValue = 0;
+};
+
+struct KSharpEnum {
+    std::string name;
+    std::string namespaceId;
+    std::vector<KSharpEnumValue> values;
+};
 
 struct KSharpProperty {
     std::string name;
     std::string type;
     std::string accessModifier;
+    std::string getterBody;
+    std::string setterBody;
+    bool hasCustomGetter = false;
+    bool hasCustomSetter = false;
 };
 
 struct KSharpClass {
@@ -66,6 +81,16 @@ std::map<std::string, std::string> ksharp_import_map = {
    {KSSTD_NAMESPACE + ".Application", "QtCore/QCoreApplication"}
 };
 
+static const std::map<std::string, std::string> KSharpPrimitives = {
+    {"string", "QString"},
+    {"int", "int"},
+    {"bool", "bool"},
+    {"double", "double"},
+    {"float", "float"},
+    {"char", "QChar"}
+
+};
+
 static const std::map<std::string, std::map<std::string, KSharpLibMethod>> KSharpNamespaceRegistry = {
     { KSSTD_NAMESPACE, {
         { "Console.WriteLine", { "qDebug() << ", "QDebug" } },
@@ -92,4 +117,7 @@ extern std::map<std::string, std::string> dynamicTypeMap;
 
 extern std::set<std::string> ksharp_imports;
 extern std::vector<KSharpClass> fileClasses;
+extern std::vector<KSharpEnum> fileEnums;
 extern KSharpClass parsedClass;
+extern KSharpProperty currentProp;
+extern KSharpEnum currentEnum;

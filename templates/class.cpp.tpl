@@ -1,9 +1,9 @@
 #include "{{ className }}.h"
 
 
-{% if namespaceName %}
+{%- if namespaceName %}
 using namespace {{ namespaceName }};
-{% endif %}
+{%- endif %}
 
 
 {{ className }}::{{ className }}(QObject* parent)
@@ -28,17 +28,25 @@ using namespace {{ namespaceName }};
 }
 
 
-{% for prop in properties %}
+{%- for prop in properties %}
 {{ prop.type }} {{ className }}::get{{ prop.name }}() const {
+    {%- if prop.hasCustomGetter %}
+    {{ prop.getterBody }}
+    {%- else %}
     return m_{{ prop.name }};
+    {%- endif %}
 }
 
 void {{ className }}::set{{ prop.name }}({{ prop.paramType }} value) {
+    {%- if prop.hasCustomSetter %}
+    {{ prop.setterBody }}
+    {%- else %}
     if (m_{{ prop.name }} == value) return;
     m_{{ prop.name }} = value;
     emit {{ prop.name }}Changed(value);
+    {%- endif %}
 }
-{% endfor %}
+{%- endfor %}
 
 {% for method in methods %}
 {{ method.returnType }} {{ className }}::{{ method.name }}({% for p in method.parameters %}{{ p.type }} {{ p.name }}{% if not loop.is_last %}, {% endif %}{% endfor %}) {

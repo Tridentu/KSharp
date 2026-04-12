@@ -14,6 +14,7 @@ namespace KSharp.Examples {
 
         public property List<string> Inventory;
         public property List<int> QuestIDs;
+        public property char JumpKey;
 
         public void AddItem(string itemName) {
             this.Inventory.append(itemName); // Qt uses .append()
@@ -28,5 +29,12 @@ namespace KSharp.Examples {
                 PlayerDied(); // Transpiler inserts 'emit' here automatically
             }
         }
+    }
+
+    public enum PlayerState {
+        Idle,
+        Walking,
+        Running,
+        Dead
     }
 }
