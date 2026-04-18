@@ -3,8 +3,13 @@
 {%- if namespaceName %}
 using namespace {{ namespaceName }};
 {%- endif %}
+{%- if isAppClass %}
+{{ className }}::{{ className }}(int& argc, char** argv)
+: {{ parent }}(argc, argv)
+{%- else %}
 {{ className }}::{{ className }}(QObject* parent)
 : {{ parent }}(parent)
+{%- endif %}
 {
     // Constructor implementation
     {%- for prop in properties %}

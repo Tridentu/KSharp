@@ -4,7 +4,9 @@
 #include <{{ includeFile }}>
 {%- endfor %}
 
-{%- if parent != "QObject" %}
+{%- if parentInclude and parentInclude != "" %}
+#include <{{ parentInclude }}>
+{%- else if parent != "QObject" and not parentInclude %}
 #include "{{ parent }}.h"
 {%- endif %}
 
@@ -34,7 +36,11 @@ public:
 class {{ className }} : {{ modifier }} {{ parent }} {
     Q_OBJECT
 public:
-    explicit {{ className }}(QObject* parent = nullptr);
+    {%- if isAppClass %}
+        explicit {{ className }}(int& argc, char** argv);
+    {%- else %}
+        explicit {{ className }}(QObject* parent = nullptr);
+    {%- endif %}
     virtual ~{{ className }}();
     {%- for prop in properties %}
         Q_PROPERTY({{ prop.type }} {{ prop.name }} READ get{{ prop.name }} WRITE set{{ prop.name }} NOTIFY {{ prop.name }}Changed)
@@ -43,9 +49,10 @@ public:
     {%- endfor %}
     {%- for method in methods %}
     {%- if method.accessModifier == "public" %}
-    {{ method.returnType }} {{ method.name }}({% for param in method.parameters %}{{ param.type }} {{ param.name }}{% if not loop.is_last %}, {% endif %}{% endfor %});
+    {% if method.isVirtual %}virtual {% endif %}{% if method.isStatic %}static {% endif %}{{ method.returnType }} {{ method.name }}({% for p in method.parameters %}{{ p.type }} {{ p.name }}{% if not loop.is_last %}, {% endif %}{% endfor %}){% if method.isAbstract %} = 0{% endif %}{% if method.isOverride %} override{% endif %};
     {%- endif %}
     {%- endfor %}
+
 {%- if hasPrivateMethods %}
 private:
     {%- for method in methods %}

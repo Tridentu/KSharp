@@ -7,6 +7,7 @@
  int brace_count = 0;
  extern int capture_mode; // We'll define this in the parser
 %}
+%option yylineno
 %x IN_BLOCK
 
 
@@ -21,9 +22,13 @@
 "interface" { return INTERFACE; }
 
 "using"    { return USING; }
+
 "private"   { return PRIVATE; }
 "protected" { return PROTECTED; }
 "static" { return STATIC; }
+"abstract" { return ABSTRACT; }
+"override" { return OVERRIDE; }
+"virtual"  { return VIRTUAL; }
 
 "int"     { yylval.sval = strdup(yytext); return IDENTIFIER; }
 "float"  { yylval.sval = strdup(yytext); return IDENTIFIER; }
@@ -54,12 +59,21 @@
 "."      { return DOT; }
 ","     { return COMMA; }
 "("     { return LBRACE_PAREN; }
-")"     { return RBRACE_PAREN; }
+")" {
+    capture_mode = 1;
+    return RBRACE_PAREN;
+}
+
+
+
 ":"    { return COLON; } /* Preparing for inheritance too */
 "+="    { return PLUS_EQUAL; }
 "="     { return ASSIGN; }
-
-[a-zA-Z_][a-zA-Z0-9_.]*("<"[a-zA-Z0-9_.<> ]+">")? {
+[a-zA-Z_][a-zA-Z0-9_]*"[]" {
+    yylval.sval = strdup(yytext);
+    return IDENTIFIER;
+}
+[a-zA-Z_][a-zA-Z0-9_.]*(\[\])?("<"[a-zA-Z0-9_.<> ]+">")? {
 yylval.sval = strdup(yytext);
   return IDENTIFIER;
 }
@@ -79,7 +93,8 @@ yylval.sval = strdup(yytext);
 <IN_BLOCK>.|\n { block_contents += yytext; }
 
 
-[ \t\r\n]+ ; /* Skip Whitespace */
+[ \t\r]+ ; /* Skip Whitespace */
+[ \n]+ { yylineno++; }
 .       { printf("K# Syntax Error: Unknown character.\n"); }
 %%
 

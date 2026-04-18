@@ -12,8 +12,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(Qt6 REQUIRED COMPONENTS Core{% for flag in linkerFlags %} {{ flag }}{% endfor %})
 
-add_executable({{ projectName }}
-    main.cpp
+{% if hasEntryPoint %}
+    kshp_main.cpp
+{% endif %}
 {%- for cls in classes %}
     {{ cls }}.cpp
 {%- endfor %}

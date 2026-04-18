@@ -26,8 +26,12 @@
  KSharpEnum currentEnum;
  KSharpInterface currentInterface;
  extern std::string projectName;
-int isStatic_flag = 0;
-
+ int isStatic_flag = 0;
+ int isAbstract_flag = 0;
+ int isOverride_flag = 0;
+ int isVirtual_flag = 0;
+ bool hasEntryPoint = false;
+std::set<std::string> ksharp_active_namespaces;
  void save_to_file(const std::string& filename, const std::string& content)
  {
     std::ofstream file(filename);
@@ -70,12 +74,24 @@ std::string mapImport(const std::string& imp) {
 
 std::string mapParamType(const std::string& type) {
     std::string mapped = mapType(type);
-    // If it's a class/container (QString, QList, QStringList), pass by const ref
-   if (mapped == "QString" || mapped == "QChar" ||
+
+
+    if (type == "string[]") return "const QStringList&";
+    if (mapped == "QString" || mapped == "QChar" ||
         mapped.find("List") != std::string::npos) {
         return "const " + mapped + "&";
     }
+
     return mapped; // int, float, etc. stay as-is
+}
+
+std::string mapParentClass(const std::string& parentClass) {
+    for (const auto& [ns, types] : KSharpTypeRegistry) {
+        if (types.count(parentClass)) {
+            return types.at(parentClass).cppType;
+        }
+    }
+    return parentClass; // fall through to literal, e.g. a user-defined parent
 }
 
 
@@ -88,20 +104,6 @@ std::string get_class_of(const std::string& varName) {
     return "QObject";
 }
 
-
-std::string finalize_logic(std::string body) {
-    // Regex for: identifier.identifier += identifier.identifier;
-    // Captures: 1=Sender, 2=Signal, 3=Receiver, 4=Slot
-    std::regex connectRegex(R"(([a-zA-Z0-9_]+)\.([a-zA-Z0-9_]+)\s*\+=\s*([a-zA-Z0-9_]+)\.([a-zA-Z0-9_]+);)");
-
-    std::string result = std::regex_replace(body, connectRegex,
-        "QObject::connect($1, &$1_TYPE::$2, $3, &$3_TYPE::$4);");
-
-    // Note: To get the actual TYPE in there, you'd iterate matches and
-    // query your get_class_of() function for each $1 and $3 found.
-
-    return result;
-}
 
 void resolve_registry_types(const std::set<std::string>& activeImports,
                             std::set<std::string>& auto_includes) {
@@ -141,8 +143,41 @@ std::string apply_namespaced_libraries(std::string body,
     return body;
 }
 
+std::string process_allocation(std::string body,  bool isStatic = false)
+{
+    std::regex declRegex(R"(([a-zA-Z0-9_]+)\s+([a-zA-Z0-9_]+)\s*=\s*new\s+([a-zA-Z0-9_]+)\((.*)\);)");
+    std::string result = "";
+    auto words_begin = std::sregex_iterator(body.begin(), body.end(), declRegex);
+    auto words_end = std::sregex_iterator();
+    size_t lastPos = 0;
 
-std::string process_body(std::string body) {
+    for (std::sregex_iterator i = words_begin; i != words_end; ++i) {
+        std::smatch match = *i;
+        std::string type = match.str(1);
+        std::string name = match.str(2);
+        std::string args = match.str(4);
+
+        // Update the table so the += connection logic below knows the types!
+        symbolTable[name] = type;
+        std::string heapAlloc = type + "* " + name + " = new " + type + "(";
+
+        // Inject 'this' as the first argument if it's a QObject type
+        if (args.empty()) {
+            heapAlloc += isStatic ? "&app" : "this";
+        } else {
+            heapAlloc += isStatic ? args : "this, " + args;
+        }
+        heapAlloc += ");";
+
+        result += body.substr(lastPos, match.position() - lastPos); // passthrough text
+        result += heapAlloc;
+        lastPos = match.position() + match.length();
+    }
+    result += body.substr(lastPos);
+    return result;
+}
+
+std::string process_body(std::string body,  bool isStatic = false) {
     size_t pos = 0;
     while ((pos = body.find("this.", pos)) != std::string::npos) {
         body.replace(pos, 5, "this->");
@@ -183,83 +218,77 @@ std::string process_body(std::string body) {
         }
     }
 
-    for (const auto& prop : parsedClass.properties) {
-        std::string signalName = prop.name + "Changed";
-        // same emit-injection logic as the methods loop
-        size_t s_pos = 0;
-        while ((s_pos = body.find(signalName + "(", s_pos)) != std::string::npos) {
-                // Look back to see if 'emit' is already there
-                bool hasEmit = false;
-                if (s_pos >= 5) {
-                    std::string lead = body.substr(s_pos - 5, 5);
-                    if (lead == "emit ") hasEmit = true;
-                }
+    if (!isStatic) {
+        for (const auto& prop : parsedClass.properties) {
+            std::string signalName = prop.name + "Changed";
+            // same emit-injection logic as the methods loop
+            size_t s_pos = 0;
+            while ((s_pos = body.find(signalName + "(", s_pos)) != std::string::npos) {
+                    // Look back to see if 'emit' is already there
+                    bool hasEmit = false;
+                    if (s_pos >= 5) {
+                        std::string lead = body.substr(s_pos - 5, 5);
+                        if (lead == "emit ") hasEmit = true;
+                    }
 
-                if (!hasEmit) {
-                    body.insert(s_pos, "emit ");
-                    s_pos += 5; // Skip the new 'emit '
-                }
-                s_pos += signalName.length() + 1;
+                    if (!hasEmit) {
+                        body.insert(s_pos, "emit ");
+                        s_pos += 5; // Skip the new 'emit '
+                    }
+                    s_pos += signalName.length() + 1;
+            }
         }
     }
 
-    std::regex declRegex(R"(([a-zA-Z0-9_]+)\s+([a-zA-Z0-9_]+)\s*=\s*new\s+([a-zA-Z0-9_]+)\((.*)\);)");
+    body = process_allocation(body, isStatic);
+    for (const auto& [varName, type] : symbolTable) {
+        std::string search = varName + ".";
+        std::string replace = varName + "->";
+        size_t p = 0;
+        while ((p = body.find(search, p)) != std::string::npos) {
+            body.replace(p, search.length(), replace);
+            p += replace.length();
+        }
+    }
+
     std::string result = "";
-    auto words_begin = std::sregex_iterator(body.begin(), body.end(), declRegex);
-    auto words_end = std::sregex_iterator();
     size_t lastPos = 0;
+    if (!isStatic) {
+        std::regex connectRegex(R"(([a-zA-Z0-9_]+)\.([a-zA-Z0-9_]+)\s*\+=\s*([a-zA-Z0-9_]+)\.([a-zA-Z0-9_]+);)");
+        auto conn_begin = std::sregex_iterator(body.begin(), body.end(), connectRegex);
+        auto conn_end = std::sregex_iterator();
 
-    for (std::sregex_iterator i = words_begin; i != words_end; ++i) {
-        std::smatch match = *i;
-        std::string type = match.str(1);
-        std::string name = match.str(2);
-        std::string args = match.str(4);
+        for (std::sregex_iterator i = conn_begin; i != conn_end; ++i) {
+            std::smatch match = *i;
+            result += body.substr(lastPos, match.position() - lastPos);
 
-        // Update the table so the += connection logic below knows the types!
-        symbolTable[name] = type;
-        std::string heapAlloc = type + "* " + name + " = new " + type + "(";
+            std::string sender = match.str(1);
+            std::string signal = match.str(2);
+            std::string receiver = match.str(3);
+            std::string slot = match.str(4);
 
-        // Inject 'this' as the first argument if it's a QObject type
-        if (args.empty()) {
-            heapAlloc += "this";
-        } else {
-            heapAlloc += "this, " + args;
+            // This is where the barren loop gets its "Soul"
+            std::string connStr = "QObject::connect(" + sender + ", &" + get_class_of(sender) + "::" + signal +
+                                ", " + receiver + ", &" + get_class_of(receiver) + "::" + slot + ");";
+
+            result += connStr;
+            lastPos = match.position() + match.length();
         }
-        heapAlloc += ");";
-
-        result += body.substr(lastPos, match.position() - lastPos); // passthrough text
-        result += heapAlloc;
-        lastPos = match.position() + match.length();
-    }
-    std::regex connectRegex(R"(([a-zA-Z0-9_]+)\.([a-zA-Z0-9_]+)\s*\+=\s*([a-zA-Z0-9_]+)\.([a-zA-Z0-9_]+);)");
-    auto conn_begin = std::sregex_iterator(body.begin(), body.end(), connectRegex);
-    auto conn_end = std::sregex_iterator();
-
-    for (std::sregex_iterator i = conn_begin; i != conn_end; ++i) {
-        std::smatch match = *i;
-        result += body.substr(lastPos, match.position() - lastPos);
-
-        std::string sender = match.str(1);
-        std::string signal = match.str(2);
-        std::string receiver = match.str(3);
-        std::string slot = match.str(4);
-
-        // This is where the barren loop gets its "Soul"
-        std::string connStr = "QObject::connect(" + sender + ", &" + get_class_of(sender) + "::" + signal +
-                              ", " + receiver + ", &" + get_class_of(receiver) + "::" + slot + ");";
-
-        result += connStr;
-        lastPos = match.position() + match.length();
     }
     result += body.substr(lastPos);
     return result;
 }
 
 void add_method_to_class(KSharpMethod m) {
+    printf("[K#]: add_method_to_class: name=%s returnType=%s isStatic=%d\n",         m.name.c_str(), m.returnType.c_str(), m.isStatic);
     if (m.name == parsedClass.name) {
         parsedClass.hasCustomConstructor = true;
         // We still process the body to handle 'this.' and connections
         parsedClass.constructorBody = process_body(m.body);
+    }  else if (m.isStatic && m.returnType == "void" && m.name == "Main") {
+            hasEntryPoint = true;
+            parsedClass.entryPointBody = process_body(m.body, true);
+            // Don't push it into methods — it won't become a class method in the output
     } else {
         m.body = process_body(m.body);
         parsedClass.methods.push_back(m);
@@ -321,11 +350,24 @@ void add_method_to_class(KSharpMethod m) {
 
     ctx["className"] = cls.name;
     ctx["parent"] = cls.parentClass;
+
+    // Look up the required header for the parent
+    std::string parentInclude = "";
+    for (const auto& [ns, types] : KSharpTypeRegistry) {
+        for (const auto& [kType, data] : types) {
+            if (data.cppType == cls.parentClass) {
+                parentInclude = data.requiredHeader;
+                break;
+            }
+        }
+    }
+
+    ctx["parentInclude"] = parentInclude;
     ctx["modifier"] = cls.accessModifier;
     ctx["namespaceName"] = ns;
     ctx["existingConstructorBody"] = cls.hasCustomConstructor;
     ctx["constructorBody"] = cls.constructorBody;
-
+    ctx["isAbstract"] = cls.isAbstract;
     ctx["properties"] = nlohmann::json::array();
     for (const auto& prop : cls.properties) {
         nlohmann::json p;
@@ -369,18 +411,20 @@ void add_method_to_class(KSharpMethod m) {
         nlohmann::json m;
         m["name"] = method.name;
         m["returnType"] = mapType(method.returnType);
-        m["body"] = apply_namespaced_libraries(method.body, ksharp_imports, header_includes);
-        m["body"] = process_body(m["body"]);
+        m["body"] = apply_namespaced_libraries(method.body, ksharp_active_namespaces, header_includes);
         m["accessModifier"] = method.accessModifier;
         m["isSlot"] = method.isSlot;
         m["isSignal"] = method.isSignal;
         m["isStatic"] = method.isStatic;
+        m["isAbstract"] = method.isAbstract;
+        m["isOverride"] = method.isOverride;
+        m["isVirtual"] = method.isVirtual;
         m["parameters"] = nlohmann::json::array();
         for (const auto& p : method.parameters) {
             nlohmann::json param;
             param["name"] = p.name;
             // Map parameter 'string' to 'const QString&'
-            param["type"] = mapParamType(p.type);
+            param["type"] = p.type;
             m["parameters"].push_back(param);
         }
         if (method.isSignal) {
@@ -392,12 +436,22 @@ void add_method_to_class(KSharpMethod m) {
         }
     }
     std::set<std::string> filtered_includes;
-    for (const auto& inc : header_includes) {
-        if (ksharp_import_map.count(inc) == 0 &&
-            KSharpNamespaceRegistry.count(inc) == 0) {
-            filtered_includes.insert(inc);
+       for (const auto& inc : header_includes) {
+        // Strip raw K# import keys
+        if (ksharp_import_map.count(inc)) continue;
+        // Strip namespace registry keys
+        if (KSharpNamespaceRegistry.count(inc)) continue;
+        // Strip KSharpTypeRegistry namespace keys
+        bool isTypeNamespace = false;
+        for (const auto& [ns, types] : KSharpTypeRegistry) {
+            if (inc == ns) { isTypeNamespace = true; break; }
         }
+        if (isTypeNamespace) continue;
+        // Strip anything containing a dot — not a valid C++ header
+        if (inc.find('.') != std::string::npos) continue;
+        filtered_includes.insert(inc);
     }
+
     header_includes = filtered_includes;
     ctx["includes"] = header_includes;
     ctx["hasPrivateMethods"] = std::any_of(cls.methods.begin(), cls.methods.end(),
@@ -408,6 +462,17 @@ void add_method_to_class(KSharpMethod m) {
         [](const KSharpMethod& m){ return m.accessModifier == "private" && m.isSlot; });
     ctx["hasProtectedSlots"] = std::any_of(cls.methods.begin(), cls.methods.end(),
         [](const KSharpMethod& m){ return m.accessModifier == "protected" && m.isSlot; });
+
+    bool isAppClass = false;
+    for (const auto& [ns, types] : KSharpTypeRegistry) {
+        for (const auto& [kType, data] : types) {
+            if (data.cppType == cls.parentClass) {
+                isAppClass = true;
+                break;
+            }
+        }
+    }
+    ctx["isAppClass"] = isAppClass;
 
     ctx["enums"] = nlohmann::json::array();
     for (const auto& enm : fileEnums) {
@@ -426,6 +491,8 @@ void add_method_to_class(KSharpMethod m) {
         }
     }
 
+
+
     inja::Environment env;
     try {
         std::string header = env.render_file("templates/class.h.tpl", ctx);
@@ -438,9 +505,15 @@ void add_method_to_class(KSharpMethod m) {
  }
 
  void generate_cmake(const std::string& projectName) {
+   if (fileClasses.empty() && !hasEntryPoint) {
+        fprintf(stderr, "K# Warning: No classes or entry point found — skipping CMakeLists.txt generation.\n");
+        return;
+    }
+
     nlohmann::json ctx;
     ctx["projectName"] = projectName;
-
+    ctx["hasEntryPoint"] = hasEntryPoint;
+    ctx["hasClasses"] = !fileClasses.empty();
     ctx["classes"] = nlohmann::json::array();
     for (const auto& cls : fileClasses) {
         ctx["classes"].push_back(cls.name);
@@ -466,6 +539,68 @@ void add_method_to_class(KSharpMethod m) {
     }
 }
 
+void generate_main() {
+    // Find the entry point class
+    KSharpClass* entryClass = nullptr;
+    for (auto& cls : fileClasses) {
+        if (!cls.entryPointBody.empty()) {
+            entryClass = &cls;
+            break;
+        }
+    }
+
+    if (!entryClass) {
+        fprintf(stderr, "K# Warning: hasEntryPoint set but no entry point body found.\n");
+        return;
+    }
+
+    // Look up the header for the app type
+    std::string parentInclude = "";
+    for (const auto& [ns, types] : KSharpTypeRegistry) {
+        for (const auto& [kType, data] : types) {
+            if (data.cppType == entryClass->parentClass) {
+                parentInclude = data.requiredHeader;
+                break;
+            }
+        }
+    }
+
+    nlohmann::json ctx;
+    ctx["appType"] = entryClass->parentClass;
+    ctx["parentInclude"] = parentInclude;
+    ctx["entryPointBody"] = entryClass->entryPointBody;
+    ctx["className"] = entryClass->name;
+
+    inja::Environment env;
+    try {
+        std::string main = env.render_file("templates/main.cpp.tpl", ctx);
+        save_to_file("kshp_main.cpp", main);
+    } catch (std::exception& e) {
+        fprintf(stderr, "K# Template Error: %s\n", e.what());
+    }
+}
+
+void reset_parser_state() {
+    fileClasses.clear();
+    fileEnums.clear();
+    fileInterfaces.clear();
+    ksharp_imports.clear();
+    ksharp_active_namespaces.clear();
+    symbolTable.clear();
+    dynamicTypeMap.clear();
+    hasEntryPoint = false;
+    currentNamespaceId = "";
+    parsedClass = KSharpClass();
+    currentProp = KSharpProperty();
+    currentEnum = KSharpEnum();
+    currentInterface = KSharpInterface();
+    isStatic_flag = 0;
+    isAbstract_flag = 0;
+    isOverride_flag = 0;
+    isVirtual_flag = 0;
+}
+
+
 %}
 
 %union {
@@ -483,13 +618,18 @@ void add_method_to_class(KSharpMethod m) {
 
 %token USING PLUS_EQUAL ASSIGN NEW PRIVATE PROTECTED
 
-%token ENUM STATIC INTERFACE
+%token ENUM STATIC INTERFACE ABSTRACT OVERRIDE VIRTUAL
+
+%right COLON
 
 %%
 program:
     prog_elements {
         for (auto& cls: fileClasses) {
             generate_cpp_class(cls);
+        }
+        if (hasEntryPoint) {
+            generate_main();
         }
         generate_cmake(projectName);
     }
@@ -501,33 +641,34 @@ prog_elements:
     | prog_elements class_declaration
     | prog_elements enum_declaration
     | prog_elements interface_declaration
+    | prog_elements error SEMICOLON { yyerrok; }
+    | prog_elements error RBRACE { yyerrok; }
     ;
 
 namespace_definition:
-    NAMESPACE IDENTIFIER  {
+    NAMESPACE IDENTIFIER LBRACE {
+        capture_mode = 0;
         currentNamespaceId = $2;
         free($2);
-    } LBRACE prog_elements RBRACE {
+    } prog_elements RBRACE {
         currentNamespaceId = "";
     }
     ;
 
 using_statement:
     USING IDENTIFIER SEMICOLON {
-        ksharp_imports.insert(mapImport($2));
+        std::string raw = $2;
+        std::string mapped = mapImport(raw);
+        if (mapped != raw) {
+            // It resolved to a header — add to includes
+            ksharp_imports.insert(mapped);
+        }
+        // Always add raw for namespace registry lookups
+        ksharp_active_namespaces.insert(raw);
         free($2);
     }
     ;
 
-inheritance_opt:
-    COLON IDENTIFIER {
-        parsedClass.parentClass = $2;
-        free($2);
-    }
-    | {
-
-    }
-    ;
 
 enum_declaration:
     PUBLIC ENUM IDENTIFIER LBRACE enum_values RBRACE {
@@ -581,8 +722,38 @@ access_modifier:
     ;
 
 method_prefix:
-    access_modifier           { $$ = strdup($1); isStatic_flag = 0; free($1); }
-    | access_modifier STATIC  { $$ = strdup($1); isStatic_flag = 1; free($1); }
+    access_modifier {
+        $$ = strdup($1);
+        isStatic_flag = 0;
+        isAbstract_flag = 0;
+        isOverride_flag = 0;
+        isVirtual_flag = 0;
+        free($1);
+    }
+    | access_modifier STATIC {
+        $$ = strdup($1);
+        isStatic_flag = 1;
+        isAbstract_flag = 0;
+        isOverride_flag = 0;
+        isVirtual_flag = 0;
+        free($1);
+    }
+    | access_modifier VIRTUAL {
+        $$ = strdup($1);
+        isStatic_flag = 0;
+        isAbstract_flag = 0;
+        isOverride_flag = 0;
+        isVirtual_flag = 1;
+        free($1);
+    }
+    | access_modifier OVERRIDE {
+        $$ = strdup($1);
+        isStatic_flag = 0;
+        isAbstract_flag = 0;
+        isOverride_flag = 1;
+        isVirtual_flag = 0;
+        free($1);
+    }
     ;
 
 interface_declaration:
@@ -625,18 +796,53 @@ interface_method:
     }
     ;
 
+
 class_declaration:
-    method_prefix CLASS IDENTIFIER inheritance_opt LBRACE {
-        // Prepare a new class context
+    method_prefix CLASS IDENTIFIER COLON IDENTIFIER LBRACE {
         parsedClass = KSharpClass();
         parsedClass.name = $3;
         parsedClass.namespaceId = currentNamespaceId;
         parsedClass.accessModifier = $1;
-        parsedClass.parentClass = parsedClass.parentClass.empty() ? "QObject" : parsedClass.parentClass;
+        parsedClass.parentClass = mapParentClass($5);
+        free($1); free($3); free($5);
     } class_body RBRACE {
-        printf("Generating Qt/KDE C++ for class: %s\n", $3);
+        printf("[K#]: Generating Qt/KDE C++ for class: %s\n", parsedClass.name.c_str());
         fileClasses.push_back(parsedClass);
+    }
+    | method_prefix CLASS IDENTIFIER LBRACE {
+        parsedClass = KSharpClass();
+        parsedClass.name = $3;
+        parsedClass.namespaceId = currentNamespaceId;
+        parsedClass.accessModifier = $1;
+        parsedClass.parentClass = "QObject";
         free($1); free($3);
+    } class_body RBRACE {
+        printf("[K#]: Generating Qt/KDE C++ for class: %s\n", parsedClass.name.c_str());
+        fileClasses.push_back(parsedClass);
+    }
+    | method_prefix ABSTRACT CLASS IDENTIFIER COLON IDENTIFIER LBRACE {
+        parsedClass = KSharpClass();
+        parsedClass.name = $4;
+        parsedClass.namespaceId = currentNamespaceId;
+        parsedClass.accessModifier = $1;
+        parsedClass.isAbstract = true;
+        parsedClass.parentClass = mapParentClass($6);
+        free($1); free($4); free($6);
+    } class_body RBRACE {
+        printf("[K#]: Generating Qt/KDE C++ for abstract class: %s\n", parsedClass.name.c_str());
+        fileClasses.push_back(parsedClass);
+    }
+    | method_prefix ABSTRACT CLASS IDENTIFIER LBRACE {
+        parsedClass = KSharpClass();
+        parsedClass.name = $4;
+        parsedClass.namespaceId = currentNamespaceId;
+        parsedClass.accessModifier = $1;
+        parsedClass.isAbstract = true;
+        parsedClass.parentClass = "QObject";
+        free($1); free($4);
+    } class_body RBRACE {
+        printf("[K#]: Generating Qt/KDE C++ for abstract class: %s\n", parsedClass.name.c_str());
+        fileClasses.push_back(parsedClass);
     }
     ;
 
@@ -648,7 +854,14 @@ member_declaration:
     property_declaration
     | method_declaration
     | signal_declaration
-    | enum_declaration
+    | error SEMICOLON {
+        yyerrok;
+        fprintf(stderr, "[K#] Skipping malformed member declaration.\n");
+    }
+    | error RBRACE {
+        yyerrok;
+        fprintf(stderr, "[K#] Skipping malformed member declaration.\n");
+    }
     ;
 
 
@@ -670,68 +883,129 @@ signal_declaration:
 
 
 method_declaration:
-    method_prefix SLOT IDENTIFIER IDENTIFIER LBRACE_PAREN parameter_list RBRACE_PAREN { capture_mode = 1; } METHOD_BODY {
+    method_prefix SLOT IDENTIFIER IDENTIFIER LBRACE_PAREN parameter_list RBRACE_PAREN METHOD_BODY {
         KSharpMethod m;
         m.returnType = $3;
         m.name = $4;
         m.isSlot = true; // Mark as slot
-        m.body = $9;
+        m.body = $8;
         m.parameters = temp_params;
         m.isStatic = isStatic_flag;
+        m.isAbstract = isAbstract_flag;
+        m.isOverride = isOverride_flag;
+        m.isVirtual = isVirtual_flag;
         m.accessModifier = $1;
         add_method_to_class(m);
         temp_params.clear();
-        free($1); free($3); free($4); free($9);
+        free($1); free($3); free($4); free($8);
     }
-    | method_prefix SLOT VOID IDENTIFIER LBRACE_PAREN parameter_list RBRACE_PAREN { capture_mode = 1; } METHOD_BODY {
+    | method_prefix SLOT VOID IDENTIFIER LBRACE_PAREN parameter_list RBRACE_PAREN METHOD_BODY {
         KSharpMethod m;
         m.returnType = "void";
         m.name = $4;
         m.isSlot = true; // Mark as slot
-        m.body = $9;
+        m.body = $8;
         m.parameters = temp_params;
         m.accessModifier = $1;
         m.isStatic = isStatic_flag;
+        m.isAbstract = isAbstract_flag;
+        m.isOverride = isOverride_flag;
+        m.isVirtual = isVirtual_flag;
         add_method_to_class(m);
         temp_params.clear();
-        free($1); free($4); free($9);
+        free($1); free($4); free($8);
     }
-    | method_prefix VOID IDENTIFIER LBRACE_PAREN parameter_list RBRACE_PAREN { capture_mode = 1; } METHOD_BODY {
+    | method_prefix VOID IDENTIFIER LBRACE_PAREN parameter_list RBRACE_PAREN  METHOD_BODY {
         KSharpMethod m;
         m.returnType = "void";
         m.name = $3;
-        m.body = $8;
+        m.body = $7;
         m.isSlot = false; // Or handle slot logic here if needed
         m.accessModifier = $1;
         m.parameters = temp_params;
-        add_method_to_class(m);
         m.isStatic = isStatic_flag;
+        m.isAbstract = isAbstract_flag;
+        m.isOverride = isOverride_flag;
+        m.isVirtual = isVirtual_flag;
+        add_method_to_class(m);
         temp_params.clear();
-        free($1); free($3); free($8);
+        free($1); free($3); free($7);
     }
-    | method_prefix IDENTIFIER IDENTIFIER LBRACE_PAREN parameter_list RBRACE_PAREN { capture_mode = 1; } METHOD_BODY {
+    | method_prefix IDENTIFIER IDENTIFIER LBRACE_PAREN parameter_list RBRACE_PAREN METHOD_BODY {
         KSharpMethod m;
         m.returnType = $2;
         m.name = $3;
         m.parameters = temp_params;
-        m.body = $8;
+        m.body = $7;
         m.accessModifier = $1;
         m.isStatic = isStatic_flag;
+        m.isAbstract = isAbstract_flag;
+        m.isOverride = isOverride_flag;
+        m.isVirtual = isVirtual_flag;
         add_method_to_class(m);
         temp_params.clear(); // Clear for the next method
-        free($1); free($2); free($3); free($8);
+        free($1); free($2); free($3); free($7);
     }
-    | method_prefix IDENTIFIER LBRACE_PAREN parameter_list RBRACE_PAREN { capture_mode = 1; } METHOD_BODY {
+    | method_prefix IDENTIFIER LBRACE_PAREN parameter_list RBRACE_PAREN  METHOD_BODY {
         KSharpMethod m;
         m.name = $2;
         m.returnType = ""; // No return type implies constructor or error
-        m.body = $7;
+        m.body = $6;
         m.accessModifier = $1;
         m.parameters = temp_params;
-        m.isStatic = isStatic_flag;  // move BEFORE add_method_to_class(m)
+        m.isStatic = isStatic_flag;
+        m.isAbstract = isAbstract_flag;
+        m.isOverride = isOverride_flag;
+        m.isVirtual = isVirtual_flag;
         add_method_to_class(m);
         temp_params.clear();
-        free($1); free($2); free($7);
+        free($1); free($2); free($6);
+    }
+    | method_prefix VOID IDENTIFIER LBRACE_PAREN parameter_list RBRACE_PAREN SEMICOLON {
+        KSharpMethod m;
+        m.returnType = "void";
+        m.name = $3;
+        m.accessModifier = $1;
+        m.isAbstract = isAbstract_flag;
+        m.isVirtual = isVirtual_flag;
+        m.parameters = temp_params;
+        temp_params.clear();
+        add_method_to_class(m);
+        free($1); free($3);
+    }
+    | method_prefix IDENTIFIER IDENTIFIER LBRACE_PAREN parameter_list RBRACE_PAREN SEMICOLON {
+        KSharpMethod m;
+        m.returnType = $2;
+        m.name = $3;
+        m.accessModifier = $1;
+        m.isAbstract = isAbstract_flag;
+        m.isVirtual = isVirtual_flag;
+        m.parameters = temp_params;
+        temp_params.clear();
+        add_method_to_class(m);
+        free($1); free($2); free($3);
+    }
+    | method_prefix ABSTRACT VOID IDENTIFIER LBRACE_PAREN parameter_list RBRACE_PAREN SEMICOLON {
+        KSharpMethod m;
+        m.returnType = "void";
+        m.name = $4;
+        m.accessModifier = $1;
+        m.isAbstract = true;
+        m.parameters = temp_params;
+        temp_params.clear();
+        add_method_to_class(m);
+        free($1); free($4);
+    }
+    | method_prefix ABSTRACT IDENTIFIER IDENTIFIER LBRACE_PAREN parameter_list RBRACE_PAREN SEMICOLON {
+        KSharpMethod m;
+        m.returnType = $3;
+        m.name = $4;
+        m.accessModifier = $1;
+        m.isAbstract = true;
+        m.parameters = temp_params;
+        temp_params.clear();
+        add_method_to_class(m);
+        free($1); free($3); free($4);
     }
     ;
 
@@ -751,6 +1025,14 @@ parameter:
         p.type = mapParamType($1); // Maps "string" -> "const QString&"
         p.name = $2;
         temp_params.push_back(p); // Temp storage
+        std::string mapped = mapType($1);
+         if (KSharpPrimitives.count($1) == 0 &&
+            mapped != "QString" &&
+            mapped != "QChar" &&
+            mapped.find("QList") == std::string::npos &&
+            mapped != "QStringList") {
+            symbolTable[$2] = mapped;
+        }
         free($1); free($2);
     }
     ;
@@ -760,15 +1042,15 @@ property_accessors:
     ;
 
 property_accessor:
-    GET { capture_mode = 1; } METHOD_BODY {
+    GET METHOD_BODY {
         currentProp.hasCustomGetter = true;
-        currentProp.getterBody = process_body($3);
-        free($3);
+        currentProp.getterBody = process_body($2);
+        free($2);
     }
-    | SET { capture_mode = 1; } METHOD_BODY {
+    | SET METHOD_BODY {
         currentProp.hasCustomSetter = true;
-        currentProp.setterBody = process_body($3);
-        free($3);
+        currentProp.setterBody = process_body($2);
+        free($2);
     }
     ;
 
@@ -808,5 +1090,5 @@ property_declaration:
 void yyerror(const char *s) {
     extern char* yytext; // The token that caused the error
     extern int yylineno; // You may need %option yylineno in lexer
-    fprintf(stderr, "K# Syntax Error: %s at token '%s' (line %d)\n", s, yytext, yylineno);
+    fprintf(stderr, "[K#]: %s at token '%s' (line %d)\n", s, yytext, yylineno);
 }

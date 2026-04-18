@@ -10,6 +10,8 @@ extern FILE *yyin;
 extern int yyparse();
 extern void yyrestart(FILE*);
 std::string projectName;
+extern void reset_parser_state();
+
 
 int main(int argc, char** argv){
     QCoreApplication app(argc, argv);
@@ -53,7 +55,7 @@ int main(int argc, char** argv){
             return 1;
         }
 
-        qInfo() << "[ksharpc]: Compiling" << fileName;
+        qInfo() << "[K#]: Compiling" << fileName;
 
         yyrestart(myfile);
         yyin = myfile;
@@ -65,9 +67,12 @@ int main(int argc, char** argv){
             qCritical() << "K# Command Error: Compilation failed for" << fileName;
             return result;
         }
+
+        reset_parser_state();
+
     }
 
-    qInfo() << "[ksharpc]: Compilation successful.";
+    qInfo() << "[K#]: Compilation successful.";
 
     return 0;
 

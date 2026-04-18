@@ -66,6 +66,8 @@ struct KSharpClass {
     std::string parentClass = "QObject";
     bool hasCustomConstructor = false;
     std::string constructorBody = "";
+    bool isAbstract = false;
+    std::string entryPointBody = "";
 
 };
 
@@ -90,7 +92,7 @@ struct KSharpLibType {
 static const std::string KSSTD_NAMESPACE = "Sys";
 
 std::map<std::string, std::string> ksharp_import_map = {
-   {KSSTD_NAMESPACE + ".Application", "QtCore/QCoreApplication"}
+
 };
 
 static const std::map<std::string, std::string> KSharpPrimitives = {
@@ -117,6 +119,9 @@ static const std::map<std::string, std::map<std::string, KSharpLibMethod>> KShar
 static const std::map<std::string, std::map<std::string, KSharpLibType>> KSharpTypeRegistry = {
     { KSSTD_NAMESPACE, {
         { "List<string>", { "QStringList", "QStringList" } }
+    }},
+    { KSSTD_NAMESPACE + ".Application", {
+        { "ConsoleApplication", {"QCoreApplication", "QtCore/QCoreApplication" }}
     }}
 };
 
@@ -131,6 +136,7 @@ extern std::set<std::string> ksharp_imports;
 extern std::vector<KSharpClass> fileClasses;
 extern std::vector<KSharpEnum> fileEnums;
 extern std::vector<KSharpInterface> fileInterfaces;
+extern std::set<std::string> ksharp_active_namespaces;
 extern KSharpClass parsedClass;
 extern KSharpProperty currentProp;
 extern KSharpEnum currentEnum;
