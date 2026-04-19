@@ -26,6 +26,7 @@
  KSharpEnum currentEnum;
  KSharpInterface currentInterface;
  extern std::string projectName;
+ std::string outputDir;
  int isStatic_flag = 0;
  int isAbstract_flag = 0;
  int isOverride_flag = 0;
@@ -56,21 +57,21 @@ std::string buildLocalDeclNoInitPattern() {
 static const std::regex localDeclRegex(buildLocalDeclPattern());
 static const std::regex localDeclNoInitRegex(buildLocalDeclNoInitPattern());
 
- void save_to_file(const std::string& filename, const std::string& content)
- {
-    std::ofstream file(filename);
-    if (file.is_open())
-    {
+void save_to_file(const std::string& filename, const std::string& content) {
+    std::string fullPath = outputDir.empty() ? filename : outputDir + "/" + filename;
+    std::ofstream file(fullPath);
+    if (file.is_open()) {
         file << content;
         file.close();
-        printf("[K#]: %s generated.\n", filename.c_str());
+        printf("[K#]: %s generated.\n", fullPath.c_str());
     } else {
-        fprintf(stderr, "K# IO Error: could not write to file %s\n", filename.c_str());
+        fprintf(stderr, "K# IO Error: could not write to file %s\n", fullPath.c_str());
     }
- }
+}
 
 std::string mapType(const std::string& ksharpType) {
     // Check primitives first
+    if (ksharpType == "auto") return "auto";
     if (KSharpPrimitives.count(ksharpType)) {
         return KSharpPrimitives.at(ksharpType);
     }
@@ -367,6 +368,17 @@ std::string process_body(std::string body,  bool isStatic = false) {
         }
     }
     result += body.substr(lastPos);
+    std::istringstream stream(result);
+    std::string line, normalized;
+    while (std::getline(stream, line)) {
+        size_t start = line.find_first_not_of(" \t");
+        if (start != std::string::npos)
+            normalized += "    " + line.substr(start) + "\n";
+        else
+            normalized += "\n";
+    }
+
+    return normalized;
     return result;
 }
 

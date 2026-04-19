@@ -37,6 +37,7 @@
 "char"   { yylval.sval = strdup(yytext); return IDENTIFIER; }
 "string"  { yylval.sval = strdup(yytext); return IDENTIFIER; }
 "void"  {  return VOID; }
+"var" { yylval.sval = strdup("auto"); return IDENTIFIER; }
 
 "new"   { return NEW; }
 "set"    { return SET; }
