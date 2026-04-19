@@ -10,11 +10,15 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 
-find_package(Qt6 REQUIRED COMPONENTS Core{% for flag in linkerFlags %} {{ flag }}{% endfor %})
+find_package(Qt6 REQUIRED COMPONENTS Core{% for flag in linkerFlags %} {{ flag }}{% endfor %} Widgets)
+{%- if needsKF6 %}
+find_package(KF6 REQUIRED COMPONENTS CoreAddons I18n XmlGui)
+{%- endif %}
 
-{% if hasEntryPoint %}
+add_executable({{ projectName }}
+{%- if hasEntryPoint %}
     kshp_main.cpp
-{% endif %}
+{%- endif %}
 {%- for cls in classes %}
     {{ cls }}.cpp
 {%- endfor %}
@@ -22,7 +26,13 @@ find_package(Qt6 REQUIRED COMPONENTS Core{% for flag in linkerFlags %} {{ flag }
 
 target_link_libraries({{ projectName }} PRIVATE
     Qt6::Core
+    Qt6::Widgets
 {%- for flag in linkerFlags %}
     Qt6::{{ flag }}
 {%- endfor %}
+{%- if needsKF6 %}
+    KF6::CoreAddons
+    KF6::I18n
+    KF6::XmlGui
+{%- endif %}
 )

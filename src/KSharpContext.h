@@ -48,6 +48,7 @@ struct KSharpProperty {
     bool hasCustomGetter = false;
     bool hasCustomSetter = false;
     bool isStatic = false;
+    std::string defaultValue = "";
 };
 
 struct KSharpInterface {
@@ -81,6 +82,7 @@ struct KSharpLib {
 struct KSharpLibMethod {
     std::string cppTranslation;
     std::string requiredHeader;
+    std::string preamble = "";
 };
 
 struct KSharpLibType {
@@ -107,24 +109,56 @@ static const std::map<std::string, std::string> KSharpPrimitives = {
 
 static const std::map<std::string, std::map<std::string, KSharpLibMethod>> KSharpNamespaceRegistry = {
     { KSSTD_NAMESPACE, {
-        { "Console.WriteLine", { "qDebug() << ", "QDebug" } },
-        { "Math.Abs",           { "qAbs",         "QtMath" } },
-        { "Math.Clamp",         { "qBound",       "QtMath" } }
+        { "Console.WriteLine", { "qDebug() << ", "QDebug", "" } },
+        { "Console.Write",     { "qDebug().nospace() << ","QDebug",     "" } },
+        { "Console.ReadLine", { "_ks_stdin.readLine()", "QTextStream", "QTextStream _ks_stdin(stdin);" } },
+        { "Console.Error",     { "qCritical() << ",      "QDebug",      "" } },
+        { "Math.Abs",   { "qAbs",       "QtMath", "" } },
+        { "Math.Clamp", { "qBound",     "QtMath", "" } },
+        { "Math.Min",   { "qMin",       "QtMath", "" } },
+        { "Math.Max",   { "qMax",       "QtMath", "" } },
+        { "Math.Floor", { "qFloor",     "QtMath", "" } },
+        { "Math.Ceil",  { "qCeil",      "QtMath", "" } },
+        { "Math.Sqrt",  { "qSqrt",      "QtMath", "" } },
+        { "Math.Pow",   { "qPow",       "QtMath", "" } },
+        { "String.IsNullOrEmpty", { "QString::isEmpty", "QString", "" } },
+        { "String.Join",          { "QStringList::join","QString", "" } },
+        { "String.Format",        { "QString::asprintf","QString", "" } },
+        { "Environment.Exit",        { "QCoreApplication::exit",          "QCoreApplication", "" } },
+        { "Environment.GetVariable", { "qEnvironmentVariable", "QtCore", "" } },
+    }},
+    { KSSTD_NAMESPACE + ".IO", {
+        { "File.Exists",      { "QFile::exists",   "QFile", "" } },
+        { "File.Delete",      { "QFile::remove",   "QFile", "" } },
+        { "Directory.Exists", { "QDir::exists",    "QDir",  "" } },
+        { "Directory.Create", { "QDir().mkpath",   "QDir",  "" } },
+        { "Path.Combine",     { "QDir::cleanPath", "QDir",  "" } },
     }},
     { KSSTD_NAMESPACE + ".Tridentu", {
-        { "MessageBox.Show",    { "QMessageBox::information", "QMessageBox" } }
+        { "MessageBox.Show",     { "QMessageBox::information", "QMessageBox", "" } },
+        { "MessageBox.Warning",  { "QMessageBox::warning",     "QMessageBox", "" } },
+        { "MessageBox.Critical", { "QMessageBox::critical",    "QMessageBox", "" } },
+        { "MessageBox.Question", { "QMessageBox::question",    "QMessageBox", "" } },
     }}
 };
 
 static const std::map<std::string, std::map<std::string, KSharpLibType>> KSharpTypeRegistry = {
     { KSSTD_NAMESPACE, {
-        { "List<string>", { "QStringList", "QStringList" } }
+        { "List<string>",              { "QStringList",          "QStringList" } },
+        { "Dictionary<string,string>", { "QMap<QString,QString>","QMap"        } },
+        { "Dictionary<string,int>",    { "QMap<QString,int>",    "QMap"        } },
+        { "HashSet<string>",           { "QSet<QString>",        "QSet"        } },
+        { "HashSet<int>",              { "QSet<int>",            "QSet"        } },
     }},
     { KSSTD_NAMESPACE + ".Application", {
-        { "ConsoleApplication", {"QCoreApplication", "QtCore/QCoreApplication" }}
-    }}
+        { "ConsoleApplication", {"QCoreApplication", "QtCore/QCoreApplication" }},
+        { "GuiApplication",    { "QGuiApplication", "QtGui/QGuiApplication"       } },
+        { "TridentuApplication", { "QApplication", "QtWidgets/QApplication" } },    }}
 };
 
+static const std::set<std::string> KSharpTridentuAppTypes = {
+    "TridentuApplication"
+};
 
 static const std::map<std::string, KSharpLib> KSharpLibRegistry = {
 

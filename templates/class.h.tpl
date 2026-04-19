@@ -1,8 +1,13 @@
 #pragma once
 
+
 {%- for includeFile in includes %}
 #include <{{ includeFile }}>
 {%- endfor %}
+
+{%- if not isFirstClassInNamespace %}
+#include "{{ firstClassInNamespace }}.h"
+{%- endif %}
 
 {%- if parentInclude and parentInclude != "" %}
 #include <{{ parentInclude }}>

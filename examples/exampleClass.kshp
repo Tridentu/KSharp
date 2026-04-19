@@ -1,5 +1,6 @@
 using Sys;
 using Sys.Application;
+
 namespace KSharp.Examples {
 
     public enum PlayerState {
@@ -11,12 +12,12 @@ namespace KSharp.Examples {
 
     public class ExampleClass  {
         public property int Health;
-        public property string Name;
+        public property string Name = "Player1";
 
         public signal void PlayerDied();
 
         public void Display(string msg) {
-            Console.WriteLine("[" + name + "]: " + msg);
+            Console.WriteLine("[" + this.Name + "]: " + msg);
         }
 
         public property List<string> Inventory;
@@ -24,16 +25,18 @@ namespace KSharp.Examples {
         public property char JumpKey;
 
         public void AddItem(string itemName) {
-            this.Inventory.append(itemName); // Qt uses .append()
+            this.Inventory.append(itemName);
             InventoryChanged(this.Inventory);
         }
+
+        public property Dictionary<string, double> StatusEffects;
 
         public signal void Damaged(int amount);
         public slot void TakeDamage(int amount) {
             this.Health -= amount;
             Damaged(amount);
             if (this.Health <= 0) {
-                PlayerDied(); // Transpiler inserts 'emit' here automatically
+                PlayerDied();
             }
         }
 

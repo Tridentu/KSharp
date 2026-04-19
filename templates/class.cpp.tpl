@@ -13,12 +13,11 @@ using namespace {{ namespaceName }};
 {
     // Constructor implementation
     {%- for prop in properties %}
-    {%- if prop.type == "int" %}
-    m_{{ prop.name }} = 0;
-    {%- else if prop.type == "QString" %}
-    m_{{ prop.name }} = "";
+    {%- if prop.hasDefault %}
+    m_{{ prop.name }} = {{ prop.defaultValue }};
     {%- endif %}
     {%- endfor %}
+
     {%- if existingConstructorBody %}
         {{ constructorBody }}
     {%- endif %}

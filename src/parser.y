@@ -32,6 +32,30 @@
  int isVirtual_flag = 0;
  bool hasEntryPoint = false;
 std::set<std::string> ksharp_active_namespaces;
+
+std::string buildLocalDeclPattern() {
+    std::string types = "";
+    for (const auto& [kType, cppType] : KSharpPrimitives) {
+        if (!types.empty()) types += "|";
+        types += kType;
+    }
+    // Add generic collection prefixes
+    types += "|List<[^>]+>|Dictionary<[^,>]+,[^>]+>|HashSet<[^>]+>";
+    return R"(\b()" + types + R"()\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*=)";
+}
+
+std::string buildLocalDeclNoInitPattern() {
+    std::string types = "";
+    for (const auto& [kType, cppType] : KSharpPrimitives) {
+        if (!types.empty()) types += "|";
+        types += kType;
+    }
+    return R"(\b()" + types + R"()\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*;)";
+}
+
+static const std::regex localDeclRegex(buildLocalDeclPattern());
+static const std::regex localDeclNoInitRegex(buildLocalDeclNoInitPattern());
+
  void save_to_file(const std::string& filename, const std::string& content)
  {
     std::ofstream file(filename);
@@ -60,6 +84,20 @@ std::string mapType(const std::string& ksharpType) {
     if (ksharpType.find("List<") == 0) {
         std::string inner = ksharpType.substr(5, ksharpType.length() - 6);
         return "QList<" + mapType(inner) + ">";
+    }
+
+    if (ksharpType.find("Dictionary<") == 0) {
+        // parse key,value types
+        std::string inner = ksharpType.substr(11, ksharpType.length() - 12);
+        size_t comma = inner.find(',');
+        std::string key = inner.substr(0, comma);
+        std::string val = inner.substr(comma + 1);
+        return "QMap<" + mapType(key) + "," + mapType(val) + ">";
+    }
+
+    if (ksharpType.find("HashSet<") == 0) {
+        std::string inner = ksharpType.substr(8, ksharpType.length() - 9);
+        return "QSet<" + mapType(inner) + ">";
     }
 
     return ksharpType;
@@ -122,7 +160,7 @@ void resolve_registry_types(const std::set<std::string>& activeImports,
 std::string apply_namespaced_libraries(std::string body,
                                       const std::set<std::string>& activeImports,
                                       std::set<std::string>& auto_includes) {
-
+    std::string preambles = "";
     for (const std::string& import : activeImports) {
         // Check if this imported namespace exists in our registry
         if (KSharpNamespaceRegistry.count(import)) {
@@ -132,15 +170,24 @@ std::string apply_namespaced_libraries(std::string body,
                 size_t pos = 0;
                 while ((pos = body.find(kMethod, pos)) != std::string::npos) {
                     // Only replace if it matches the namespace the user actually imported
-                    body.replace(pos, kMethod.length(), data.cppTranslation);
+                       size_t afterMatch = pos + kMethod.length();
+                        if (afterMatch < body.size() && body[afterMatch] != '(') {
+                            pos += kMethod.length();
+                            continue;
+                        }
+                        body.replace(pos, kMethod.length(), data.cppTranslation);
 
                     auto_includes.insert(data.requiredHeader);
+                    if (!data.preamble.empty() &&
+                        preambles.find(data.preamble) == std::string::npos) {
+                        preambles += data.preamble + "\n";
+                    }
                     pos += data.cppTranslation.length();
                 }
             }
         }
     }
-    return body;
+    return preambles.empty() ? body : preambles + body;
 }
 
 std::string process_allocation(std::string body,  bool isStatic = false)
@@ -240,16 +287,60 @@ std::string process_body(std::string body,  bool isStatic = false) {
         }
     }
 
-    body = process_allocation(body, isStatic);
-    for (const auto& [varName, type] : symbolTable) {
-        std::string search = varName + ".";
-        std::string replace = varName + "->";
-        size_t p = 0;
-        while ((p = body.find(search, p)) != std::string::npos) {
-            body.replace(p, search.length(), replace);
-            p += replace.length();
+    {
+        std::string result = "";
+        size_t lastPos = 0;
+        auto begin = std::sregex_iterator(body.begin(), body.end(), localDeclRegex);
+        auto end = std::sregex_iterator();
+
+        for (std::sregex_iterator i = begin; i != end; ++i) {
+            std::smatch match = *i;
+            std::string cppType = mapType(match.str(1));
+            std::string varName = match.str(2);
+
+            result += body.substr(lastPos, match.position() - lastPos);
+            result += cppType + " " + varName + " =";
+            lastPos = match.position() + match.length();
         }
+        result += body.substr(lastPos);
+        body = result;
     }
+
+    // Pass: rewrite local variable declarations without initializers
+    {
+        std::string result = "";
+        size_t lastPos = 0;
+        auto begin = std::sregex_iterator(body.begin(), body.end(), localDeclNoInitRegex);
+        auto end = std::sregex_iterator();
+
+        for (std::sregex_iterator i = begin; i != end; ++i) {
+            std::smatch match = *i;
+            std::string cppType = mapType(match.str(1));
+            std::string varName = match.str(2);
+
+            result += body.substr(lastPos, match.position() - lastPos);
+            result += cppType + " " + varName + ";";
+            lastPos = match.position() + match.length();
+        }
+        result += body.substr(lastPos);
+        body = result;
+    }
+
+   body = process_allocation(body, isStatic);
+   for (const auto& [varName, type] : symbolTable) {
+    std::string search = varName + ".";
+    std::string replace = varName + "->";
+    size_t p = 0;
+    while ((p = body.find(search, p)) != std::string::npos) {
+        // Don't rewrite if preceded by -> (it's a member, not a local variable)
+        if (p >= 2 && body.substr(p - 2, 2) == "->") {
+            p += search.length();
+            continue;
+        }
+        body.replace(p, search.length(), replace);
+        p += replace.length();
+    }
+}
 
     std::string result = "";
     size_t lastPos = 0;
@@ -295,6 +386,15 @@ void add_method_to_class(KSharpMethod m) {
     }
 }
 
+std::string getDefaultValue(const std::string& cppType) {
+    if (cppType == "int" || cppType == "float" ||
+        cppType == "double" || cppType == "long") return "0";
+    if (cppType == "bool")    return "false";
+    if (cppType == "QString") return "\"\"";
+    if (cppType == "QChar")   return "'\\0'";
+    return ""; // QList, QMap etc. — default constructed, no init needed
+}
+
 
 
  void generate_cpp_class(const KSharpClass& cls)
@@ -325,28 +425,6 @@ void add_method_to_class(KSharpMethod m) {
     ctx["linkerFlags"] = requiredLinkerFlags;
 
 
-    ctx["interfaces"] = nlohmann::json::array();
-    for (const auto& iface : fileInterfaces) {
-        if (iface.namespaceId == cls.namespaceId) {
-            nlohmann::json i;
-            i["name"] = iface.name;
-            i["methods"] = nlohmann::json::array();
-            for (const auto& method : iface.methods) {
-                nlohmann::json m;
-                m["name"] = method.name;
-                m["returnType"] = mapType(method.returnType);
-                m["parameters"] = nlohmann::json::array();
-                for (const auto& p : method.parameters) {
-                    nlohmann::json param;
-                    param["name"] = p.name;
-                    param["type"] = mapParamType(p.type);
-                    m["parameters"].push_back(param);
-                }
-                i["methods"].push_back(m);
-            }
-            ctx["interfaces"].push_back(i);
-        }
-    }
 
     ctx["className"] = cls.name;
     ctx["parent"] = cls.parentClass;
@@ -378,6 +456,11 @@ void add_method_to_class(KSharpMethod m) {
         p["hasCustomSetter"] = prop.hasCustomSetter;
         p["getterBody"] = prop.getterBody;
         p["setterBody"] = prop.setterBody;
+        std::string defVal = prop.defaultValue.empty() ?
+    getDefaultValue(mapType(prop.type)) :
+    prop.defaultValue;
+        p["defaultValue"] = defVal;
+        p["hasDefault"] = !defVal.empty();
         p["isStatic"] = prop.isStatic;
         ctx["properties"].push_back(p);
     }
@@ -473,21 +556,63 @@ void add_method_to_class(KSharpMethod m) {
         }
     }
     ctx["isAppClass"] = isAppClass;
+    std::string firstInNs = "";
+
+    bool isFirstClassInNamespace = true;
+    for (const auto& other : fileClasses) {
+        if (other.name == cls.name) break;
+        if (other.namespaceId == cls.namespaceId) {
+            isFirstClassInNamespace = false;
+            firstInNs = other.name;
+
+            break;
+        }
+    }
+
+
+
+    ctx["isFirstClassInNamespace"] = isFirstClassInNamespace;
+    ctx["firstClassInNamespace"] = isFirstClassInNamespace ? "" : firstInNs;
 
     ctx["enums"] = nlohmann::json::array();
-    for (const auto& enm : fileEnums) {
-        if (enm.namespaceId == cls.namespaceId) {
-            nlohmann::json e;
-            e["name"] = enm.name;
-            e["values"] = nlohmann::json::array();
-            for (const auto& v : enm.values) {
-                nlohmann::json val;
-                val["name"] = v.name;
-                val["hasExplicitValue"] = v.hasExplicitValue;
-                val["explicitValue"] = v.explicitValue;
-                e["values"].push_back(val);
+    ctx["interfaces"] = nlohmann::json::array();
+
+    if (isFirstClassInNamespace) {
+        for (const auto& enm : fileEnums) {
+            if (enm.namespaceId == cls.namespaceId) {
+                nlohmann::json e;
+                e["name"] = enm.name;
+                e["values"] = nlohmann::json::array();
+                for (const auto& v : enm.values) {
+                    nlohmann::json val;
+                    val["name"] = v.name;
+                    val["hasExplicitValue"] = v.hasExplicitValue;
+                    val["explicitValue"] = v.explicitValue;
+                    e["values"].push_back(val);
+                }
+                ctx["enums"].push_back(e);
             }
-            ctx["enums"].push_back(e);
+        }
+        for (const auto& iface : fileInterfaces) {
+            if (iface.namespaceId == cls.namespaceId) {
+                nlohmann::json i;
+                i["name"] = iface.name;
+                i["methods"] = nlohmann::json::array();
+                for (const auto& method : iface.methods) {
+                    nlohmann::json m;
+                    m["name"] = method.name;
+                    m["returnType"] = mapType(method.returnType);
+                    m["parameters"] = nlohmann::json::array();
+                    for (const auto& p : method.parameters) {
+                        nlohmann::json param;
+                        param["name"] = p.name;
+                        param["type"] = mapParamType(p.type);
+                        m["parameters"].push_back(param);
+                    }
+                    i["methods"].push_back(m);
+                }
+                ctx["interfaces"].push_back(i);
+            }
         }
     }
 
@@ -530,6 +655,15 @@ void add_method_to_class(KSharpMethod m) {
         ctx["linkerFlags"].push_back(f);
     }
 
+    bool needsKF6 = false;
+    for (const auto& cls : fileClasses) {
+        if (KSharpTridentuAppTypes.count(cls.parentClass) > 0) {
+            needsKF6 = true;
+            break;
+        }
+    }
+    ctx["needsKF6"] = needsKF6;
+
     inja::Environment env;
     try {
         std::string cmake = env.render_file("templates/CMakeLists.txt.tpl", ctx);
@@ -571,9 +705,35 @@ void generate_main() {
     ctx["entryPointBody"] = entryClass->entryPointBody;
     ctx["className"] = entryClass->name;
 
+    ctx["allClasses"] = nlohmann::json::array();
+    for (const auto& cls : fileClasses) {
+        ctx["allClasses"].push_back(cls.name);
+    }
+
+    ctx["namespaces"] = nlohmann::json::array();
+    std::set<std::string> seenNs;
+    for (const auto& cls : fileClasses) {
+        if (!cls.namespaceId.empty() && !seenNs.count(cls.namespaceId)) {
+            // Convert dots to ::
+            std::string ns = cls.namespaceId;
+            size_t pos = 0;
+            while ((pos = ns.find('.', pos)) != std::string::npos) {
+                ns.replace(pos, 1, "::");
+                pos += 2;
+            }
+            ctx["namespaces"].push_back(ns);
+            seenNs.insert(cls.namespaceId);
+        }
+    }
+
     inja::Environment env;
     try {
-        std::string main = env.render_file("templates/main.cpp.tpl", ctx);
+        bool isTridentu = KSharpTridentuAppTypes.count(entryClass->parentClass) > 0;
+        std::string templateFile = isTridentu ?
+        "templates/main_tridentu.cpp.tpl" :
+        "templates/main.cpp.tpl";
+
+        std::string main = env.render_file(templateFile, ctx);
         save_to_file("kshp_main.cpp", main);
     } catch (std::exception& e) {
         fprintf(stderr, "K# Template Error: %s\n", e.what());
@@ -588,6 +748,7 @@ void reset_parser_state() {
     ksharp_active_namespaces.clear();
     symbolTable.clear();
     dynamicTypeMap.clear();
+    temp_params.clear();
     hasEntryPoint = false;
     currentNamespaceId = "";
     parsedClass = KSharpClass();
@@ -608,7 +769,7 @@ void reset_parser_state() {
 }
 
 
-%token <sval> IDENTIFIER METHOD_BODY NUMBER
+%token <sval> IDENTIFIER METHOD_BODY NUMBER STRING_LITERAL
 
 %type <sval> access_modifier method_prefix
 
@@ -1060,7 +1221,6 @@ property_declaration:
         p.type = $3;
         p.name = $4;
         p.accessModifier = "public";
-        symbolTable[$4] = mapType($3);
         parsedClass.properties.push_back(p);
         free($3); free($4);
     }
@@ -1069,7 +1229,6 @@ property_declaration:
         currentProp.type = $3;
         currentProp.name = $4;
         currentProp.accessModifier = "public";
-        symbolTable[$4] = mapType($3);
     }  property_accessors RBRACE {
         parsedClass.properties.push_back(currentProp);
         free($3); free($4);
@@ -1080,9 +1239,35 @@ property_declaration:
         p.name = $5;
         p.isStatic = true;
         p.accessModifier = $1;
-        symbolTable[$5] = mapType($4);
         parsedClass.properties.push_back(p);
         free($1); free($4); free($5);
+    }
+   | PUBLIC PROPERTY IDENTIFIER IDENTIFIER ASSIGN STRING_LITERAL SEMICOLON {
+        KSharpProperty p;
+        p.type = $3;
+        p.name = $4;
+        p.accessModifier = "public";
+        p.defaultValue = $6;
+        parsedClass.properties.push_back(p);
+        free($3); free($4); free($6);
+    }
+    | PUBLIC PROPERTY IDENTIFIER IDENTIFIER ASSIGN NUMBER SEMICOLON {
+        KSharpProperty p;
+        p.type = $3;
+        p.name = $4;
+        p.accessModifier = "public";
+        p.defaultValue = $6;
+        parsedClass.properties.push_back(p);
+        free($3); free($4); free($6);
+    }
+    | PUBLIC PROPERTY IDENTIFIER IDENTIFIER ASSIGN IDENTIFIER SEMICOLON {
+        KSharpProperty p;
+        p.type = $3;
+        p.name = $4;
+        p.accessModifier = "public";
+        p.defaultValue = $6;
+        parsedClass.properties.push_back(p);
+        free($3); free($4); free($6);
     }
     ;
 %%
