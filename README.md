@@ -547,7 +547,7 @@ namespace MyApp {
 If you want to view these examples in file form, look in the ```examples``` folder.
  
 ---
-
+ 
 ## Known Limitations
  
 - No inline expression parsing — complex expressions in `new` calls may not translate correctly
@@ -558,8 +558,8 @@ If you want to view these examples in file form, look in the ```examples``` fold
 - File I/O (`File.Read`, `File.Write`) requires manual `QFile` usage for now
 - `Path.Combine` is not supported due to argument structure differences
 - `String.Format` is not supported — use string interpolation `$"..."` instead
-
 ---
+
 
 ## Licensing
 

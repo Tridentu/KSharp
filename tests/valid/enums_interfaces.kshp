@@ -1,0 +1,39 @@
+using Sys;
+using Sys.Application;
+
+namespace KSharp.Tests {
+    public enum Direction {
+        North = 0,
+        South = 1,
+        East = 2,
+        West = 3
+    }
+
+    public interface IMovable {
+        void Move(int x, int y);
+        string GetPosition();
+    }
+
+    public class Character {
+        public property int X = 0;
+        public property int Y = 0;
+        public property string Name = "Hero";
+
+        public void Move(int x, int y) {
+            this.X += x;
+            this.Y += y;
+        }
+
+        public string GetPosition() {
+            return $"({this.X}, {this.Y})";
+        }
+    }
+
+    public class EnumsApp : ConsoleApplication {
+        public static void Main(string[] args) {
+            Character c = new Character();
+            c.Move(1, 2);
+            Console.WriteLine(c.GetPosition());
+        }
+    }
+}

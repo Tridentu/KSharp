@@ -1,0 +1,12 @@
+using Sys;
+
+namespace KSharp.Tests {
+    public class BadClass {
+        public property int Health;
+
+        // Missing return type — should cause syntax error
+        public {
+            this.Health = 100;
+        }
+    }
+}

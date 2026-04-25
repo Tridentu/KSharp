@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.16)
 project(ksharp VERSION 0.1 LANGUAGES C CXX)
 
 find_package(FLEX REQUIRED)

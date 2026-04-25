@@ -10,6 +10,8 @@ namespace MyApp {
         public property VBoxLayout Layout;
         public property Widget Container;
 
+
+
         public MyWindow(){
             this.Container = new Widget();
             this.Title = new Label("Hello from K#!");

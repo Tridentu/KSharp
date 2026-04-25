@@ -1,0 +1,15 @@
+using Sys;
+
+namespace KSharp.Tests {
+    public class DataModel {
+        public property string Title = "Untitled";
+        public property int Count = 0;
+
+        public signal void DataChanged();
+
+        public void Increment() {
+            this.Count += 1;
+            DataChanged();
+        }
+    }
+}

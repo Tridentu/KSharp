@@ -749,7 +749,6 @@ std::string process_body(std::string body,  bool isStatic = false) {
 
 
 void add_method_to_class(KSharpMethod m) {
-    printf("[K#]: add_method_to_class: name=%s returnType=%s isStatic=%d\n",         m.name.c_str(), m.returnType.c_str(), m.isStatic);
     if (m.name == parsedClass.name) {
         parsedClass.hasCustomConstructor = true;
         // We still process the body to handle 'this.' and connections

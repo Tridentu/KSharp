@@ -1,0 +1,35 @@
+using Sys;
+using Sys.Application;
+using Sys.Tridentu.UI;
+
+namespace KSharp.Tests {
+    public class TestWindow : MainWindow {
+        public property Label Title;
+        public property PushButton OkButton;
+        public property VBoxLayout Layout;
+        public property Widget Container;
+
+        public TestWindow() {
+            this.Container = new Widget();
+            this.Title = new Label("Test Window");
+            this.OkButton = new PushButton("OK");
+            this.Layout = new VBoxLayout(this.Container);
+            this.Layout.addWidget(this.Title);
+            this.Layout.addWidget(this.OkButton);
+            this.setCentralWidget(this.Container);
+            this.resize(300, 200);
+            this.OkButton.clicked += this.OnOkClicked;
+        }
+
+        public void OnOkClicked() {
+            Console.WriteLine("OK clicked!");
+        }
+    }
+
+    public class UITestApp : TridentuApplication {
+        public static void Main(string[] args) {
+            TestWindow window = new TestWindow();
+            window.show();
+        }
+    }
+}

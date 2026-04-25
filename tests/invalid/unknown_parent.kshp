@@ -1,0 +1,8 @@
+using Sys;
+
+namespace KSharp.Tests {
+    // NonExistentBase is not in any registry — should generate a warning
+    public class OrphanClass : NonExistentBase {
+        public property string Name;
+    }
+}

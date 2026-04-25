@@ -1,0 +1,29 @@
+using Sys;
+using Sys.Application;
+
+namespace KSharp.Tests {
+    public abstract class Shape {
+        public property string Color = "red";
+        public abstract void Draw();
+        public abstract float GetArea();
+    }
+
+    public class Circle : Shape {
+        public property float Radius = 1.0;
+
+        public override void Draw() {
+            Console.WriteLine($"Drawing circle with radius {this.Radius}");
+        }
+
+        public override float GetArea() {
+            return 3.14159;
+        }
+    }
+
+    public class AbstractApp : ConsoleApplication {
+        public static void Main(string[] args) {
+            Circle c = new Circle();
+            c.Draw();
+        }
+    }
+}

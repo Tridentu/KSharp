@@ -1,0 +1,31 @@
+using Sys;
+using Sys.Application;
+
+namespace KSharp.Tests {
+    public class Player {
+        public property int Health = 100;
+        public property string Name = "Player";
+        public property float Speed;
+        public property bool IsAlive = true;
+        public property List<string> Inventory;
+
+        public void TakeDamage(int amount) {
+            this.Health -= amount;
+            if (this.Health <= 0) {
+                this.IsAlive = false;
+            }
+        }
+
+        public string GetStatus() {
+            return $"{this.Name} has {this.Health} HP";
+        }
+    }
+
+    public class PropertiesApp : ConsoleApplication {
+        public static void Main(string[] args) {
+            Player p = new Player();
+            p.Name = "Hero";
+            Console.WriteLine(p.GetStatus());
+        }
+    }
+}
