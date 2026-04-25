@@ -26,8 +26,10 @@ int main(int argc, char** argv){
     parserCmd.addPositionalArgument("source", "One or more .kshp source files to compile");
     QCommandLineOption buildOption("build", "Build the generated project");
     QCommandLineOption runOption("run", "Run the binary after building");
+    QCommandLineOption reconfigureOption("reconfigure", "Force CMake reconfiguration");
     parserCmd.addOption(buildOption);
     parserCmd.addOption(runOption);
+    parserCmd.addOption(reconfigureOption);
     parserCmd.process(app);
 
     const QStringList args = parserCmd.positionalArguments();
@@ -90,8 +92,10 @@ int main(int argc, char** argv){
         QString outDirQ = QString::fromStdString(outDir);
         QString buildDir = outDirQ + "/build";
         QString cacheFile = outDirQ + "/build/CMakeCache.txt";
-        if (!QFile::exists(cacheFile)) {
-            qInfo() << "[K#]: Configuring CMake...";
+        bool needsConfigure = !QFile::exists(cacheFile) || parserCmd.isSet(reconfigureOption);
+
+        if (needsConfigure) {
+            qInfo() << "[ksharpc]: Configuring CMake...";
             QProcess cmake;
             cmake.setWorkingDirectory(outDirQ);
             cmake.setProcessChannelMode(QProcess::ForwardedChannels);

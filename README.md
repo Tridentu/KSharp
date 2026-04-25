@@ -6,6 +6,31 @@ K# (KSharp) is a C#-inspired language that compiles to Qt/KDE C++. It is the nat
 
 
 ---
+
+## Building the Compiler
+ 
+### Dependencies
+ 
+- CMake 3.16+
+- Qt6 (Core, Widgets)
+- Flex
+- Bison 3.x
+- [Inja](https://github.com/pantor/inja) (C++ template engine)
+- [nlohmann/json](https://github.com/nlohmann/json)
+- KDE Frameworks 6 (CoreAddons, I18n, XmlGui) — for KDE app support
+### Build Steps
+ 
+```bash
+git clone https://github.com/Tridentu/KSharp
+cd KSharp
+cmake -B build -S .
+cmake --build build
+```
+ 
+The compiler binary will be at `build/ksharpc`.
+ 
+---
+
  
 ## Compiler Usage
  
@@ -13,11 +38,29 @@ K# (KSharp) is a C#-inspired language that compiles to Qt/KDE C++. It is the nat
 ksharpc source.kshp              # Compile only
 ksharpc source.kshp --build      # Compile and build with CMake
 ksharpc source.kshp --run        # Compile, build, and run
+ksharpc source.kshp --reconfigure # Force CMake reconfiguration
+
 ```
 
 K# Source files use the `.kshp` extension. The C++ Output is written to a directory named after the first source file's base name.
  
 ---
+
+## Syntax Highlighting
+ 
+K# syntax highlighting is available for Kate, KWrite, and any editor using KSyntaxHighlighting (including KDevelop).
+ 
+Install the syntax definition:
+ 
+```bash
+mkdir -p ~/.local/share/org.kde.syntax-highlighting/syntax/
+cp ksharp.xml ~/.local/share/org.kde.syntax-highlighting/syntax/
+```
+ 
+Restart Kate and open any `.kshp` file — K# will appear under **Tools → Highlighting → Sources**.
+ 
+---
+
  
 ## Program Structure
  
@@ -516,3 +559,12 @@ If you want to view these examples in file form, look in the ```examples``` fold
 - `Path.Combine` is not supported due to argument structure differences
 - `String.Format` is not supported — use string interpolation `$"..."` instead
 
+---
+
+## Licensing
+
+K# is dual-licensed:
+- The K# language specification and standard library are licensed under [LICENSE]
+- The `ksharpc` compiler is licensed under [LICENSE-COMPILER]
+
+---
