@@ -28,11 +28,4 @@ namespace MyApp {
 
         }
     }
-
-    public class App : TridentuApplication {
-        public static void Main(string[] args) {
-            MyWindow window = new MyWindow();
-            window.show();
-        }
-    }
 }

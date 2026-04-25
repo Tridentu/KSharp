@@ -88,6 +88,14 @@ int main(int argc, char** argv){
 
     }
 
+    extern void generate_cmake(const std::string&);
+    extern void generate_main(const std::string&);
+    extern bool globalHasEntryPoint;
+    extern std::string globalEntryPointClassName;
+
+    if (globalHasEntryPoint) generate_main(projectName);
+    generate_cmake(projectName);
+
     if (parserCmd.isSet(buildOption) || parserCmd.isSet(runOption)) {
         QString outDirQ = QString::fromStdString(outDir);
         QString buildDir = outDirQ + "/build";

@@ -263,8 +263,10 @@ static std::map<std::string, std::map<std::string, std::string>> KSharpSignalMap
 };
 
 extern std::map<std::string, std::string> dynamicTypeMap;
+extern std::map<std::string, std::string> globalClassRegistry;
 
 extern std::set<std::string> ksharp_imports;
+extern std::vector<KSharpClass> globalFileClasses;
 extern std::vector<KSharpClass> fileClasses;
 extern std::vector<KSharpEnum> fileEnums;
 extern std::vector<KSharpInterface> fileInterfaces;

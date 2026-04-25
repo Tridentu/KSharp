@@ -23,6 +23,8 @@
  std::string currentNamespaceId;
  std::map<std::string, std::string> symbolTable;
  std::map<std::string, std::string> dynamicTypeMap;
+ std::map<std::string, std::string> globalClassRegistry;
+ std::vector<KSharpClass> globalFileClasses;
  KSharpProperty currentProp;
  KSharpEnum currentEnum;
  KSharpInterface currentInterface;
@@ -33,6 +35,7 @@
  int isOverride_flag = 0;
  int isVirtual_flag = 0;
  bool hasEntryPoint = false;
+ bool globalHasEntryPoint = false;
 std::set<std::string> ksharp_active_namespaces;
 
 std::string buildLocalDeclPattern() {
@@ -88,8 +91,14 @@ void save_to_file(const std::string& filename, const std::string& content) {
 
 bool isPointerType(const std::string& mappedType)
 {
-    return
-        KSharpWidgetBases.count(mappedType) > 0;
+    if (KSharpWidgetBases.count(mappedType) > 0) return true;
+    // Check if it's a user-defined widget subclass from a previous file
+
+    if (globalClassRegistry.count(mappedType)) {
+        return KSharpWidgetBases.count(globalClassRegistry.at(mappedType)) > 0;
+    }
+
+    return false;
 }
 
 std::string mapType(const std::string& ksharpType) {
@@ -261,6 +270,10 @@ std::string process_allocation(std::string body,  bool isStatic = false)
                         break;
                     }
                 }
+            }
+
+            if (!isWidget && globalClassRegistry.count(cppType)) {
+                isWidget = KSharpWidgetBases.count(globalClassRegistry.at(cppType)) > 0;
             }
 
             bool isLayout = KSharpLayoutTypes.count(cppType) > 0;
@@ -1011,17 +1024,17 @@ std::string getDefaultValue(const std::string& cppType) {
  }
 
  void generate_cmake(const std::string& projectName) {
-   if (fileClasses.empty() && !hasEntryPoint) {
+   if (globalFileClasses.empty() && !globalHasEntryPoint) {
         fprintf(stderr, "K# Warning: No classes or entry point found — skipping CMakeLists.txt generation.\n");
         return;
     }
 
     nlohmann::json ctx;
     ctx["projectName"] = projectName;
-    ctx["hasEntryPoint"] = hasEntryPoint;
-    ctx["hasClasses"] = !fileClasses.empty();
+    ctx["hasEntryPoint"] = globalHasEntryPoint;
+    ctx["hasClasses"] = !globalFileClasses.empty();
     ctx["classes"] = nlohmann::json::array();
-    for (const auto& cls : fileClasses) {
+    for (const auto& cls : globalFileClasses) {
         ctx["classes"].push_back(cls.name);
     }
 
@@ -1037,14 +1050,14 @@ std::string getDefaultValue(const std::string& cppType) {
     }
 
     bool needsKF6 = false;
-    for (const auto& cls : fileClasses) {
+    for (const auto& cls : globalFileClasses) {
         if (KF6Types.count(cls.parentClass) > 0) {
             needsKF6 = true;
             break;
         }
     }
     bool needsWidgets = false;
-    for (const auto& cls : fileClasses) {
+    for (const auto& cls : globalFileClasses) {
         if (KSharpWidgetBases.count(cls.parentClass)) {
             needsWidgets = true;
             break;
@@ -1066,7 +1079,7 @@ std::string getDefaultValue(const std::string& cppType) {
 void generate_main(const std::string& projectName) {
     // Find the entry point class
     KSharpClass* entryClass = nullptr;
-    for (auto& cls : fileClasses) {
+    for (auto& cls : globalFileClasses) {
         if (!cls.entryPointBody.empty()) {
             entryClass = &cls;
             break;
@@ -1097,13 +1110,13 @@ void generate_main(const std::string& projectName) {
     ctx["className"] = entryClass->name;
 
     ctx["allClasses"] = nlohmann::json::array();
-    for (const auto& cls : fileClasses) {
+    for (const auto& cls : globalFileClasses) {
         ctx["allClasses"].push_back(cls.name);
     }
 
     ctx["namespaces"] = nlohmann::json::array();
     std::set<std::string> seenNs;
-    for (const auto& cls : fileClasses) {
+    for (const auto& cls : globalFileClasses) {
         if (!cls.namespaceId.empty() && !seenNs.count(cls.namespaceId)) {
             // Convert dots to ::
             std::string ns = cls.namespaceId;
@@ -1197,11 +1210,12 @@ program:
         bool hasKDEWindow = false;
         for (auto& cls : fileClasses) {
             generate_cpp_class(cls);
+            globalClassRegistry[cls.name] = cls.parentClass;
+            globalFileClasses.push_back(cls);
             if (cls.parentClass == "KXmlGuiWindow") hasKDEWindow = true;
         }
-        if (hasEntryPoint) generate_main(projectName);
         if (hasKDEWindow) generate_rc(projectName);
-        generate_cmake(projectName);
+        if (hasEntryPoint) globalHasEntryPoint = true;
     }
     ;
 
