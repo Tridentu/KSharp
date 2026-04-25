@@ -9,6 +9,7 @@
  #include <regex>
  #include "src/KSharpContext.h"
  #include <inja/inja.hpp>
+ #include <stdexcept>
  #include <nlohmann/json.hpp>
  std::vector<KSharpClass> fileClasses;
  std::vector<KSharpEnum> fileEnums;
@@ -54,8 +55,23 @@ std::string buildLocalDeclNoInitPattern() {
     return R"(\b()" + types + R"()\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*;)";
 }
 
+// Regex
 static const std::regex localDeclRegex(buildLocalDeclPattern());
 static const std::regex localDeclNoInitRegex(buildLocalDeclNoInitPattern());
+static const std::regex foreachRegex(
+        R"(foreach\s*\(\s*([a-zA-Z_][a-zA-Z0-9_<>, ]*)\s+([a-zA-Z_][a-zA-Z0-9_]*)\s+in\s+([a-zA-Z_][a-zA-Z0-9_\->\.]*)\s*\))");
+static const std::regex declRegex(R"(([a-zA-Z0-9_]+)\s+([a-zA-Z0-9_]+)\s*=\s*new\s+([a-zA-Z0-9_]+)\((.*)\);)");
+static const std::regex connectRegex(R"(([a-zA-Z0-9_]+)\.([a-zA-Z0-9_]+)\s*\+=\s*([a-zA-Z0-9_]+)\.([a-zA-Z0-9_]+);)");
+static const std::regex interpRegex(R"(\$\"([^\"]*)\")");
+static const std::regex placeholderRegex(R"(\{([^}]+)\})");
+static const std::regex isTypeRegex(
+            R"(([a-zA-Z_][a-zA-Z0-9_]*)\s+\bis\b\s+([a-zA-Z_][a-zA-Z0-9_]*))");
+static const std::regex asTypeRegex(
+            R"(([a-zA-Z_][a-zA-Z0-9_]*)\s+\bas\b\s+([a-zA-Z_][a-zA-Z0-9_]*))");
+static const std::regex memberAllocRegex(
+    R"(([a-zA-Z0-9_]+)->m_([a-zA-Z0-9_]+)\s*=\s*new\s+([a-zA-Z0-9_]+)\((.*)\);)");
+static const std::regex propConnectRegex(
+    R"(this->m_([a-zA-Z0-9_]+)->([a-zA-Z0-9_]+)\s*\+=\s*this->([a-zA-Z0-9_]+);)");
 
 void save_to_file(const std::string& filename, const std::string& content) {
     std::string fullPath = outputDir.empty() ? filename : outputDir + "/" + filename;
@@ -67,6 +83,13 @@ void save_to_file(const std::string& filename, const std::string& content) {
     } else {
         fprintf(stderr, "K# IO Error: could not write to file %s\n", fullPath.c_str());
     }
+}
+
+
+bool isPointerType(const std::string& mappedType)
+{
+    return
+        KSharpWidgetBases.count(mappedType) > 0;
 }
 
 std::string mapType(const std::string& ksharpType) {
@@ -99,6 +122,11 @@ std::string mapType(const std::string& ksharpType) {
     if (ksharpType.find("HashSet<") == 0) {
         std::string inner = ksharpType.substr(8, ksharpType.length() - 9);
         return "QSet<" + mapType(inner) + ">";
+    }
+
+    for (const auto& [ns, types] : KSharpTypeRegistry) {
+        if (types.count(ksharpType))
+            return types.at(ksharpType).cppType;
     }
 
     return ksharpType;
@@ -191,9 +219,18 @@ std::string apply_namespaced_libraries(std::string body,
     return preambles.empty() ? body : preambles + body;
 }
 
+bool isValueType(const std::string& cppType) {
+    if (KSharpValueTypes.count(cppType)) return true;
+    // Generic containers — QList<int>, QMap<QString,int> etc.
+    if (cppType.find("QList<") == 0) return true;
+    if (cppType.find("QMap<") == 0) return true;
+    if (cppType.find("QSet<") == 0) return true;
+    if (cppType.find("QHash<") == 0) return true;
+    return false;
+}
+
 std::string process_allocation(std::string body,  bool isStatic = false)
 {
-    std::regex declRegex(R"(([a-zA-Z0-9_]+)\s+([a-zA-Z0-9_]+)\s*=\s*new\s+([a-zA-Z0-9_]+)\((.*)\);)");
     std::string result = "";
     auto words_begin = std::sregex_iterator(body.begin(), body.end(), declRegex);
     auto words_end = std::sregex_iterator();
@@ -204,93 +241,99 @@ std::string process_allocation(std::string body,  bool isStatic = false)
         std::string type = match.str(1);
         std::string name = match.str(2);
         std::string args = match.str(4);
+        std::string cppType = mapType(type);
 
-        // Update the table so the += connection logic below knows the types!
-        symbolTable[name] = type;
-        std::string heapAlloc = type + "* " + name + " = new " + type + "(";
+        result += body.substr(lastPos, match.position() - lastPos);
 
-        // Inject 'this' as the first argument if it's a QObject type
-        if (args.empty()) {
-            heapAlloc += isStatic ? "&app" : "this";
+        if (isValueType(cppType)) {
+            // Stack allocation — no pointer, no this injection
+            result += cppType + " " + name + "(" + args + ");";
         } else {
-            heapAlloc += isStatic ? args : "this, " + args;
-        }
-        heapAlloc += ");";
+            // Heap allocation with parent injection
+            symbolTable[name] = type;
+            std::string heapAlloc = cppType + "* " + name + " = new " + cppType + "(";
+            // Check if the instantiated type is a widget subclass
+            bool isWidget = KSharpWidgetBases.count(cppType) > 0;
+            if (!isWidget) {
+                for (const auto& cls : fileClasses) {
+                    if (cls.name == cppType && KSharpWidgetBases.count(cls.parentClass) > 0) {
+                        isWidget = true;
+                        break;
+                    }
+                }
+            }
 
-        result += body.substr(lastPos, match.position() - lastPos); // passthrough text
-        result += heapAlloc;
+            bool isLayout = KSharpLayoutTypes.count(cppType) > 0;
+
+            if (isStatic) {
+                if (args.empty()) {
+                    heapAlloc += isWidget ? "nullptr" : "&app";
+                } else {
+                    heapAlloc += isWidget ? args + ", nullptr" : args;
+                }
+            } else {
+                if (isLayout) {
+                    heapAlloc += args.empty() ? "this" : args;
+                } else if (isWidget) {
+                    heapAlloc += args.empty() ? "this" : args + ", this";
+                } else {
+                    heapAlloc += args.empty() ? "this" : "this, " + args;
+                }
+            }
+            heapAlloc += ");";
+            result += heapAlloc;
+        }
+
         lastPos = match.position() + match.length();
     }
     result += body.substr(lastPos);
-    return result;
+    auto member_begin = std::sregex_iterator(result.begin(), result.end(), memberAllocRegex);
+    auto member_end = std::sregex_iterator();
+    std::string result2 = "";
+    size_t lastPos2 = 0;
+
+    for (std::sregex_iterator i = member_begin; i != member_end; ++i) {
+        std::smatch match = *i;
+        std::string owner = match.str(1);   // "this"
+        std::string member = match.str(2);  // "Title"
+        std::string type = match.str(3);    // "Label"
+        std::string args = match.str(4);    // "Hello from K#!"
+        std::string cppType = mapType(type);
+
+        result2 += result.substr(lastPos2, match.position() - lastPos2);
+
+        bool isWidget = KSharpWidgetBases.count(cppType) > 0;
+        std::string alloc = owner + "->m_" + member + " = new " + cppType + "(";
+
+         bool isLayout = KSharpLayoutTypes.count(cppType) > 0;
+
+            if (isStatic) {
+                if (args.empty()) {
+                    alloc += isWidget ? "nullptr" : "&app";
+                } else {
+                    alloc += isWidget ? args + ", nullptr" : args;
+                }
+            } else {
+                if (isLayout) {
+                    alloc += args.empty() ? "this" : args;
+                } else if (isWidget) {
+                    alloc += args.empty() ? "this" : args + ", this";
+                } else {
+                    alloc += args.empty() ? "this" : "this, " + args;
+                }
+            }
+        alloc += ");";
+        result2 += alloc;
+        lastPos2 = match.position() + match.length();
+    }
+    result2 += result.substr(lastPos2);
+    return result2;
 }
 
-std::string process_body(std::string body,  bool isStatic = false) {
-    size_t pos = 0;
-    while ((pos = body.find("this.", pos)) != std::string::npos) {
-        body.replace(pos, 5, "this->");
-        pos += 6;
-    }
-
-    for (const auto& prop : parsedClass.properties) {
-        std::string search = "this->" + prop.name;
-        std::string replace = "this->m_" + prop.name;
-
-        size_t p_pos = 0;
-        while ((p_pos = body.find(search, p_pos)) != std::string::npos) {
-            body.replace(p_pos, search.length(), replace);
-            p_pos += replace.length();
-        }
-    }
-
-    for (const auto& method : parsedClass.methods) {
-        if (method.isSignal) {
-            std::string signalName = method.name;
-            // Use a regex to find signal calls that aren't already preceded by 'emit'
-            // or part of a string. For a simpler start, look for 'SignalName('
-            size_t s_pos = 0;
-            while ((s_pos = body.find(signalName + "(", s_pos)) != std::string::npos) {
-                // Look back to see if 'emit' is already there
-                bool hasEmit = false;
-                if (s_pos >= 5) {
-                    std::string lead = body.substr(s_pos - 5, 5);
-                    if (lead == "emit ") hasEmit = true;
-                }
-
-                if (!hasEmit) {
-                    body.insert(s_pos, "emit ");
-                    s_pos += 5; // Skip the new 'emit '
-                }
-                s_pos += signalName.length() + 1;
-            }
-        }
-    }
-
-    if (!isStatic) {
-        for (const auto& prop : parsedClass.properties) {
-            std::string signalName = prop.name + "Changed";
-            // same emit-injection logic as the methods loop
-            size_t s_pos = 0;
-            while ((s_pos = body.find(signalName + "(", s_pos)) != std::string::npos) {
-                    // Look back to see if 'emit' is already there
-                    bool hasEmit = false;
-                    if (s_pos >= 5) {
-                        std::string lead = body.substr(s_pos - 5, 5);
-                        if (lead == "emit ") hasEmit = true;
-                    }
-
-                    if (!hasEmit) {
-                        body.insert(s_pos, "emit ");
-                        s_pos += 5; // Skip the new 'emit '
-                    }
-                    s_pos += signalName.length() + 1;
-            }
-        }
-    }
-
-    {
-        std::string result = "";
-        size_t lastPos = 0;
+std::string process_local_decl(const std::string& body, bool init = true){
+    std::string result = "";
+    size_t lastPos = 0;
+    if (init){
         auto begin = std::sregex_iterator(body.begin(), body.end(), localDeclRegex);
         auto end = std::sregex_iterator();
 
@@ -303,14 +346,7 @@ std::string process_body(std::string body,  bool isStatic = false) {
             result += cppType + " " + varName + " =";
             lastPos = match.position() + match.length();
         }
-        result += body.substr(lastPos);
-        body = result;
-    }
-
-    // Pass: rewrite local variable declarations without initializers
-    {
-        std::string result = "";
-        size_t lastPos = 0;
+    } else {
         auto begin = std::sregex_iterator(body.begin(), body.end(), localDeclNoInitRegex);
         auto end = std::sregex_iterator();
 
@@ -323,30 +359,76 @@ std::string process_body(std::string body,  bool isStatic = false) {
             result += cppType + " " + varName + ";";
             lastPos = match.position() + match.length();
         }
-        result += body.substr(lastPos);
-        body = result;
     }
-
-   body = process_allocation(body, isStatic);
-   for (const auto& [varName, type] : symbolTable) {
-    std::string search = varName + ".";
-    std::string replace = varName + "->";
-    size_t p = 0;
-    while ((p = body.find(search, p)) != std::string::npos) {
-        // Don't rewrite if preceded by -> (it's a member, not a local variable)
-        if (p >= 2 && body.substr(p - 2, 2) == "->") {
-            p += search.length();
-            continue;
-        }
-        body.replace(p, search.length(), replace);
-        p += replace.length();
-    }
+    result += body.substr(lastPos);
+    return result;
 }
 
+std::string process_type_check(const std::string& body){
+        std::string result = "";
+        size_t lastPos = 0;
+        auto begin = std::sregex_iterator(body.begin(), body.end(), isTypeRegex);
+        auto end = std::sregex_iterator();
+
+        for (std::sregex_iterator i = begin; i != end; ++i) {
+            std::smatch match = *i;
+            std::string expr = match.str(1);
+            std::string type = match.str(2);
+            result += body.substr(lastPos, match.position() - lastPos);
+            result += "dynamic_cast<" + mapType(type) + "*>(" + expr + ") != nullptr";
+            lastPos = match.position() + match.length();
+        }
+        result += body.substr(lastPos);
+        return result;
+}
+
+std::string process_cast(const std::string& body){
+        std::string result = "";
+        size_t lastPos = 0;
+        auto begin = std::sregex_iterator(body.begin(), body.end(), asTypeRegex);
+        auto end = std::sregex_iterator();
+
+        for (std::sregex_iterator i = begin; i != end; ++i) {
+            std::smatch match = *i;
+            std::string expr = match.str(1);
+            std::string type = match.str(2);
+            result += body.substr(lastPos, match.position() - lastPos);
+            result += "dynamic_cast<" + mapType(type) + "*>(" + expr + ")";
+            lastPos = match.position() + match.length();
+        }
+        result += body.substr(lastPos);
+        return result;
+}
+
+std::string process_for_loop(const std::string& body){
+        std::string result = "";
+        size_t lastPos = 0;
+        auto begin = std::sregex_iterator(body.begin(), body.end(), foreachRegex);
+        auto end = std::sregex_iterator();
+
+        for (std::sregex_iterator i = begin; i != end; ++i) {
+            std::smatch match = *i;
+            std::string kType   = match.str(1);
+            std::string varName = match.str(2);
+            std::string expr    = match.str(3);
+            std::string cppType = mapType(kType);
+
+            // Use const ref for non-primitives
+            std::string iterType = mapParamType(kType);
+
+            result += body.substr(lastPos, match.position() - lastPos);
+            result += "for (" + iterType + " " + varName + " : " + expr + ")";
+            lastPos = match.position() + match.length();
+        }
+        result += body.substr(lastPos);
+        return result;
+}
+
+std::string process_connection(const std::string& body, bool isStatic = false)
+{
     std::string result = "";
     size_t lastPos = 0;
     if (!isStatic) {
-        std::regex connectRegex(R"(([a-zA-Z0-9_]+)\.([a-zA-Z0-9_]+)\s*\+=\s*([a-zA-Z0-9_]+)\.([a-zA-Z0-9_]+);)");
         auto conn_begin = std::sregex_iterator(body.begin(), body.end(), connectRegex);
         auto conn_end = std::sregex_iterator();
 
@@ -368,19 +450,289 @@ std::string process_body(std::string body,  bool isStatic = false) {
         }
     }
     result += body.substr(lastPos);
-    std::istringstream stream(result);
-    std::string line, normalized;
-    while (std::getline(stream, line)) {
-        size_t start = line.find_first_not_of(" \t");
-        if (start != std::string::npos)
-            normalized += "    " + line.substr(start) + "\n";
-        else
-            normalized += "\n";
-    }
-
-    return normalized;
     return result;
 }
+
+std::string process_prop_connection(const std::string& body, bool isStatic = false)
+{
+    std::string result = "";
+    size_t lastPos = 0;
+    if (!isStatic) {
+        auto conn_begin = std::sregex_iterator(body.begin(), body.end(), propConnectRegex);
+        auto conn_end = std::sregex_iterator();
+
+        for (std::sregex_iterator i = conn_begin; i != conn_end; ++i) {
+            std::smatch match = *i;
+            result += body.substr(lastPos, match.position() - lastPos);
+
+            std::string propName    = match.str(1);  // ClickMe
+            std::string signal      = match.str(2);  // clicked
+            std::string slot        = match.str(3);  // OnClickMe
+
+            std::string propCppType = "QObject";
+            for (const auto& prop : parsedClass.properties) {
+                if (prop.name == propName) {
+                    propCppType = mapType(prop.type);
+                    break;
+                }
+            }
+
+            // Look up signal in map
+            std::string resolvedSignal = signal;
+            if (KSharpSignalMap.count(propCppType) &&
+                KSharpSignalMap.at(propCppType).count(signal)) {
+                resolvedSignal = KSharpSignalMap.at(propCppType).at(signal);
+            }
+
+            std::string connStr = "QObject::connect(this->m_" + propName +
+                ", &" + propCppType + "::" + resolvedSignal +
+                ", this, &" + parsedClass.name + "::" + slot + ");";
+
+            result += connStr;
+            lastPos = match.position() + match.length();
+        }
+    }
+    result += body.substr(lastPos);
+    return result;
+}
+
+std::string process_strinterp(const std::string& body){
+        std::string result = "";
+        size_t lastPos = 0;
+        auto begin = std::sregex_iterator(body.begin(), body.end(), interpRegex);
+        auto end = std::sregex_iterator();
+
+        for (std::sregex_iterator i = begin; i != end; ++i) {
+            std::smatch match = *i;
+            std::string inner = match.str(1);
+
+            // Collect placeholder expressions
+            std::vector<std::string> args;
+            std::string format = inner;
+
+            // Replace each {expr} with %N
+            int argIndex = 1;
+            std::smatch ph;
+            std::string temp = inner;
+            std::string formatResult = "";
+            size_t searchPos = 0;
+
+            auto ph_begin = std::sregex_iterator(inner.begin(), inner.end(), placeholderRegex);
+            auto ph_end = std::sregex_iterator();
+            size_t innerLast = 0;
+
+            for (std::sregex_iterator j = ph_begin; j != ph_end; ++j) {
+                std::smatch pmatch = *j;
+                formatResult += inner.substr(innerLast, pmatch.position() - innerLast);
+                formatResult += "%" + std::to_string(argIndex++);
+                args.push_back(pmatch.str(1));
+                innerLast = pmatch.position() + pmatch.length();
+            }
+            formatResult += inner.substr(innerLast);
+
+            // Build QString("format").arg(expr1).arg(expr2)...
+            std::string rewritten = "QString(\"" + formatResult + "\")";
+            for (const auto& arg : args) {
+                rewritten += ".arg(" + arg + ")";
+            }
+
+            result += body.substr(lastPos, match.position() - lastPos);
+            result += rewritten;
+            lastPos = match.position() + match.length();
+        }
+        result += body.substr(lastPos);
+        return result;
+}
+
+std::string process_body(std::string body,  bool isStatic = false) {
+
+    {
+        size_t p = 0;
+        while ((p = body.find("var", p)) != std::string::npos) {
+            bool beforeOk = (p == 0) || !isalnum(body[p-1]) && body[p-1] != '_';
+            bool afterOk  = (p + 3 >= body.size()) || !isalnum(body[p+3]) && body[p+3] != '_';
+            if (beforeOk && afterOk) {
+                body.replace(p, 3, "auto");
+                p += 4;
+            } else {
+                p += 3;
+            }
+        }
+    }
+
+    if (!isStatic) {
+        size_t pos = 0;
+        while ((pos = body.find("this.", pos)) != std::string::npos) {
+            body.replace(pos, 5, "this->");
+            pos += 6;
+        }
+
+        // Rewrite null to nullptr
+        {
+            size_t p = 0;
+            while ((p = body.find("null", p)) != std::string::npos) {
+                bool beforeOk = (p == 0) || !isalnum(body[p-1]) && body[p-1] != '_';
+                bool afterOk  = (p + 4 >= body.size()) || !isalnum(body[p+4]) && body[p+4] != '_';
+                if (beforeOk && afterOk) {
+                    body.replace(p, 4, "nullptr");
+                    p += 7;
+                } else {
+                    p += 4;
+                }
+            }
+        }
+
+        for (const auto& prop : parsedClass.properties) {
+            std::string search = "this->" + prop.name;
+            std::string replace = "this->m_" + prop.name;
+
+            size_t p_pos = 0;
+            while ((p_pos = body.find(search, p_pos)) != std::string::npos) {
+                body.replace(p_pos, search.length(), replace);
+                p_pos += replace.length();
+            }
+        }
+        for (const auto& method : parsedClass.methods) {
+            if (method.isSignal) {
+                std::string signalName = method.name;
+                // Use a regex to find signal calls that aren't already preceded by 'emit'
+                // or part of a string. For a simpler start, look for 'SignalName('
+                size_t s_pos = 0;
+                while ((s_pos = body.find(signalName + "(", s_pos)) != std::string::npos) {
+                    // Look back to see if 'emit' is already there
+                    bool hasEmit = false;
+                    if (s_pos >= 5) {
+                        std::string lead = body.substr(s_pos - 5, 5);
+                        if (lead == "emit ") hasEmit = true;
+                    }
+
+                    if (!hasEmit) {
+                        body.insert(s_pos, "emit ");
+                        s_pos += 5; // Skip the new 'emit '
+                    }
+                    s_pos += signalName.length() + 1;
+                }
+            }
+        }
+        for (const auto& prop : parsedClass.properties) {
+            std::string signalName = prop.name + "Changed";
+            // same emit-injection logic as the methods loop
+            size_t s_pos = 0;
+            while ((s_pos = body.find(signalName + "(", s_pos)) != std::string::npos) {
+                    // Look back to see if 'emit' is already there
+                    bool hasEmit = false;
+                    if (s_pos >= 5) {
+                        std::string lead = body.substr(s_pos - 5, 5);
+                        if (lead == "emit ") hasEmit = true;
+                    }
+
+                    if (!hasEmit) {
+                        body.insert(s_pos, "emit ");
+                        s_pos += 5; // Skip the new 'emit '
+                    }
+                    s_pos += signalName.length() + 1;
+            }
+        }
+        for (const auto& prop : parsedClass.properties) {
+            std::string mappedType = mapType(prop.type);
+            if (KSharpWidgetBases.count(mappedType) > 0) {
+                std::string search = "this->m_" + prop.name + ".";
+                std::string replace = "this->m_" + prop.name + "->";
+                size_t p = 0;
+                while ((p = body.find(search, p)) != std::string::npos) {
+                    body.replace(p, search.length(), replace);
+                    p += replace.length();
+                }
+            }
+        }
+    }
+
+    body = process_local_decl(body);
+    // Pass: rewrite local variable declarations without initializers
+    body = process_local_decl(body, false);
+     // Rewrite 'expr is Type' to dynamic_cast check
+    body = process_type_check(body);
+    body = process_cast(body);
+    body = process_for_loop(body);
+    // Rewrite string interpolation $"..." to QString::arg()
+    body = process_strinterp(body);
+
+    {
+        for (const auto& [csType, cppType] : KSharpExceptionRegistry) {
+            size_t p = 0;
+            while ((p = body.find(csType, p)) != std::string::npos) {
+                bool beforeOk = (p == 0) || !isalnum(body[p-1]) && body[p-1] != '_';
+                bool afterOk  = (p + csType.size() >= body.size()) ||
+                                !isalnum(body[p + csType.size()]) && body[p + csType.size()] != '_';
+                if (beforeOk && afterOk) {
+                    body.replace(p, csType.size(), cppType);
+                    p += cppType.size();
+                } else {
+                    p += csType.size();
+                }
+            }
+        }
+
+        size_t p = 0;
+        while ((p = body.find(".Message", p)) != std::string::npos) {
+            body.replace(p, 8, ".what()");
+            p += 7;
+        }
+    }
+
+    body = process_allocation(body, isStatic);
+    for (const auto& [varName, type] : symbolTable) {
+            std::string search = varName + ".";
+            std::string replace = varName + "->";
+            size_t p = 0;
+            while ((p = body.find(search, p)) != std::string::npos) {
+                // Don't rewrite if preceded by -> (it's a member, not a local variable)
+                if (p >= 2 && body.substr(p - 2, 2) == "->") {
+                    p += search.length();
+                    continue;
+                }
+                body.replace(p, search.length(), replace);
+                p += replace.length();
+            }
+    }
+
+
+
+    body = process_connection(body, isStatic);
+    body = process_prop_connection(body, isStatic);
+
+    std::string result = body;
+
+    size_t bodyStart = result.find_first_not_of("\n\r");
+    if (bodyStart != std::string::npos)
+        result = result.substr(bodyStart);
+
+    std::istringstream stream(result);
+    std::string line, normalized;
+    bool lastWasEmpty = false;
+    int depth = 1; // start at 1 since we're inside a method body
+    while (std::getline(stream, line)) {
+        size_t start = line.find_first_not_of(" \t");
+        if (start == std::string::npos) {
+            if (!lastWasEmpty) { normalized += "\n"; lastWasEmpty = true; }
+            continue;
+        }
+        std::string trimmed = line.substr(start);
+        if (trimmed[0] == '}') depth--;
+        normalized += std::string(depth * 4, ' ') + trimmed + "\n";
+        if (trimmed.back() == '{') depth++;
+        lastWasEmpty = false;
+    }
+    // Strip leading and trailing blank lines
+    size_t first = normalized.find_first_not_of("\n");
+    size_t last = normalized.find_last_not_of("\n");
+    if (first != std::string::npos)
+        normalized = normalized.substr(first, last - first + 1);
+
+    return normalized;
+}
+
+
 
 void add_method_to_class(KSharpMethod m) {
     printf("[K#]: add_method_to_class: name=%s returnType=%s isStatic=%d\n",         m.name.c_str(), m.returnType.c_str(), m.isStatic);
@@ -462,15 +814,17 @@ std::string getDefaultValue(const std::string& cppType) {
     for (const auto& prop : cls.properties) {
         nlohmann::json p;
         p["name"] = prop.name;
-        p["type"] = mapType(prop.type);
-        p["paramType"] = mapParamType(prop.type);
+        std::string mappedType = mapType(prop.type);
+        bool isPointer = isPointerType(mappedType);
+        p["isPointerType"] = isPointer;
+        p["type"] = isPointer ? mappedType + "*" : mappedType;
+        p["paramType"] = isPointer ? mappedType + "*" : mapParamType(prop.type);
         p["hasCustomGetter"] = prop.hasCustomGetter;
         p["hasCustomSetter"] = prop.hasCustomSetter;
         p["getterBody"] = prop.getterBody;
         p["setterBody"] = prop.setterBody;
         std::string defVal = prop.defaultValue.empty() ?
-    getDefaultValue(mapType(prop.type)) :
-    prop.defaultValue;
+            getDefaultValue(mappedType) : prop.defaultValue;
         p["defaultValue"] = defVal;
         p["hasDefault"] = !defVal.empty();
         p["isStatic"] = prop.isStatic;
@@ -485,6 +839,19 @@ std::string getDefaultValue(const std::string& cppType) {
         std::string mapped = mapType(prop.type);
         if (mapped.find("QList") != std::string::npos) header_includes.insert("QList");
         if (mapped == "QStringList") header_includes.insert("QStringList");
+    }
+
+    for (const auto& prop : cls.properties) {
+        std::string mappedType = mapType(prop.type);
+        // Look up header for this type
+        for (const auto& [ns, types] : KSharpTypeRegistry) {
+            for (const auto& [kType, data] : types) {
+                if (data.cppType == mappedType || kType == prop.type) {
+                    if (!data.requiredHeader.empty())
+                        header_includes.insert(data.requiredHeader);
+                }
+            }
+        }
     }
 
     // Check methods for types that need headers
@@ -529,7 +896,12 @@ std::string getDefaultValue(const std::string& cppType) {
         } else {
             ctx["methods"].push_back(m);
         }
+        if (method.body.find("std::exception") != std::string::npos ||
+            method.body.find("std::runtime_error") != std::string::npos) {
+            header_includes.insert("stdexcept");
+        }
     }
+
     std::set<std::string> filtered_includes;
        for (const auto& inc : header_includes) {
         // Strip raw K# import keys
@@ -558,16 +930,13 @@ std::string getDefaultValue(const std::string& cppType) {
     ctx["hasProtectedSlots"] = std::any_of(cls.methods.begin(), cls.methods.end(),
         [](const KSharpMethod& m){ return m.accessModifier == "protected" && m.isSlot; });
 
-    bool isAppClass = false;
-    for (const auto& [ns, types] : KSharpTypeRegistry) {
-        for (const auto& [kType, data] : types) {
-            if (data.cppType == cls.parentClass) {
-                isAppClass = true;
-                break;
-            }
-        }
-    }
+    bool isAppClass = KSharpAppEntryTypes.count(cls.parentClass) > 0;
     ctx["isAppClass"] = isAppClass;
+
+    bool isWidgetClass = false;
+    if (KSharpWidgetBases.count(cls.parentClass)) isWidgetClass = true;
+    ctx["isWidgetClass"] = isWidgetClass;
+
     std::string firstInNs = "";
 
     bool isFirstClassInNamespace = true;
@@ -669,11 +1038,20 @@ std::string getDefaultValue(const std::string& cppType) {
 
     bool needsKF6 = false;
     for (const auto& cls : fileClasses) {
-        if (KSharpTridentuAppTypes.count(cls.parentClass) > 0) {
+        if (KF6Types.count(cls.parentClass) > 0) {
             needsKF6 = true;
             break;
         }
     }
+    bool needsWidgets = false;
+    for (const auto& cls : fileClasses) {
+        if (KSharpWidgetBases.count(cls.parentClass)) {
+            needsWidgets = true;
+            break;
+        }
+    }
+    ctx["needsWidgets"] = needsWidgets;
+
     ctx["needsKF6"] = needsKF6;
 
     inja::Environment env;
@@ -685,7 +1063,7 @@ std::string getDefaultValue(const std::string& cppType) {
     }
 }
 
-void generate_main() {
+void generate_main(const std::string& projectName) {
     // Find the entry point class
     KSharpClass* entryClass = nullptr;
     for (auto& cls : fileClasses) {
@@ -712,6 +1090,7 @@ void generate_main() {
     }
 
     nlohmann::json ctx;
+    ctx["projectName"] = projectName;
     ctx["appType"] = entryClass->parentClass;
     ctx["parentInclude"] = parentInclude;
     ctx["entryPointBody"] = entryClass->entryPointBody;
@@ -750,6 +1129,23 @@ void generate_main() {
     } catch (std::exception& e) {
         fprintf(stderr, "K# Template Error: %s\n", e.what());
     }
+}
+
+void generate_rc(const std::string& projectName) {
+    std::string rc =
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+        "<!DOCTYPE gui SYSTEM \"kpartgui.dtd\">\n"
+        "<gui name=\"" + projectName + "\" version=\"1\">\n"
+        "    <MenuBar>\n"
+        "        <Menu name=\"file\"><text>&amp;File</text>\n"
+        "        </Menu>\n"
+        "        <Menu name=\"edit\"><text>&amp;Edit</text>\n"
+        "        </Menu>\n"
+        "    </MenuBar>\n"
+        "    <ToolBar name=\"mainToolBar\"><text>Main Toolbar</text>\n"
+        "    </ToolBar>\n"
+        "</gui>\n";
+    save_to_file(projectName + "ui.rc", rc);
 }
 
 void reset_parser_state() {
@@ -798,12 +1194,13 @@ void reset_parser_state() {
 %%
 program:
     prog_elements {
-        for (auto& cls: fileClasses) {
+        bool hasKDEWindow = false;
+        for (auto& cls : fileClasses) {
             generate_cpp_class(cls);
+            if (cls.parentClass == "KXmlGuiWindow") hasKDEWindow = true;
         }
-        if (hasEntryPoint) {
-            generate_main();
-        }
+        if (hasEntryPoint) generate_main(projectName);
+        if (hasKDEWindow) generate_rc(projectName);
         generate_cmake(projectName);
     }
     ;

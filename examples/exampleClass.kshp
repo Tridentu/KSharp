@@ -9,7 +9,7 @@ namespace KSharp.Examples {
         Running = 4,
         Dead = 6,
     }
-
+    // This is an example of a class for demonstrative purposes.
     public class ExampleClass  {
         public property int Health;
         public property string Name = "Player1";
@@ -40,13 +40,19 @@ namespace KSharp.Examples {
             }
         }
 
+        public void HealthCheck(){
+            var status = this.Health > 0 ? "Alive" : "Dead";
+            Console.WriteLine($"Hello {this.Name}, you have {this.Health} HP. You are {status}.");
+        }
+
 
     }
 
     public class ExampleProgram : ConsoleApplication {
         public static void Main(string[] args){
             ExampleClass ec = new ExampleClass();
-            ec.Display("Hello World!");
+            ec.Display("Hello World!\n");
+            ec.HealthCheck();
         }
     }
 

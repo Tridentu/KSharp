@@ -42,6 +42,7 @@
 "new"   { return NEW; }
 "set"    { return SET; }
 "get"    { return GET; }
+"foreach" { yylval.sval = strdup(yytext); return IDENTIFIER; }
 
 "<"     { return L_ANGLE; }
 ">"     { return R_ANGLE; }
@@ -97,7 +98,9 @@
 }
 <IN_BLOCK>.|\n { block_contents += yytext; }
 
-
+"//"[^\n]*\n  { /* skip line comment */ }
+"/*"([^*]|\*+[^*/])*\*+"/"  { /* skip block comment */ }
+"#"[^\n]*\n    { /* skip preprocessor-style comments */ }
 [ \t\r]+ ; /* Skip Whitespace */
 [ \n]+ { yylineno++; }
 .       { printf("K# Syntax Error: Unknown character.\n"); }

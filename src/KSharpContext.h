@@ -149,19 +149,117 @@ static const std::map<std::string, std::map<std::string, KSharpLibType>> KSharpT
         { "Dictionary<string,int>",    { "QMap<QString,int>",    "QMap"        } },
         { "HashSet<string>",           { "QSet<QString>",        "QSet"        } },
         { "HashSet<int>",              { "QSet<int>",            "QSet"        } },
+        { "Vector<string>", { "QList<QString>", "QList" } },
     }},
     { KSSTD_NAMESPACE + ".Application", {
         { "ConsoleApplication", {"QCoreApplication", "QtCore/QCoreApplication" }},
         { "GuiApplication",    { "QGuiApplication", "QtGui/QGuiApplication"       } },
-        { "TridentuApplication", { "QApplication", "QtWidgets/QApplication" } },    }}
+        { "TridentuApplication", { "QApplication", "QtWidgets/QApplication" } },
+    }},
+    { KSSTD_NAMESPACE + ".Tridentu.UI", {
+        { "MainWindow",   { "QMainWindow",   "QtWidgets/QMainWindow"  } },
+        { "KDEWindow",    { "KXmlGuiWindow", "KXmlGuiWindow"  } },
+        { "Dialog",       { "QDialog",       "QtWidgets/QDialog"      } },
+        { "Widget",       { "QWidget",       "QtWidgets/QWidget"      } },
+        { "DockWidget",   { "QDockWidget",   "QtWidgets/QDockWidget"  } },
+        { "Label",        { "QLabel",        "QtWidgets/QLabel"       } },
+        { "PushButton",   { "QPushButton",   "QtWidgets/QPushButton"  } },
+        { "LineEdit",     { "QLineEdit",     "QtWidgets/QLineEdit"    } },
+        { "TextEdit",     { "QTextEdit",     "QtWidgets/QTextEdit"    } },
+        { "ComboBox",     { "QComboBox",     "QtWidgets/QComboBox"    } },
+        { "CheckBox",     { "QCheckBox",     "QtWidgets/QCheckBox"    } },
+        { "RadioButton",  { "QRadioButton",  "QtWidgets/QRadioButton" } },
+        { "Slider",       { "QSlider",       "QtWidgets/QSlider"      } },
+        { "SpinBox",      { "QSpinBox",      "QtWidgets/QSpinBox"     } },
+        { "VBoxLayout",   { "QVBoxLayout",   "QtWidgets/QVBoxLayout"  } },
+        { "HBoxLayout",   { "QHBoxLayout",   "QtWidgets/QHBoxLayout"  } },
+        { "GridLayout",   { "QGridLayout",   "QtWidgets/QGridLayout"  } },
+    }}
+};
+
+static const std::map<std::string, std::string> KSharpExceptionRegistry = {
+    { "Exception",            "std::exception"              },
+    { "ArgumentException",    "std::invalid_argument"       },
+    { "NullReferenceException","std::runtime_error"         },
+    { "IOException",          "std::ios_base::failure"      },
+    { "OverflowException",    "std::overflow_error"         },
+    { "NotImplementedException","std::logic_error"          },
+};
+
+static const std::set<std::string> KSharpAppEntryTypes = {
+    "TridentuApplication",
+    "QApplication"
 };
 
 static const std::set<std::string> KSharpTridentuAppTypes = {
-    "TridentuApplication"
+    "TridentuApplication",
+    "QApplication",
+    "KXmlGuiWindow",
+    "QMainWindow",
+    "KPageDialog",
+    "QWidget",
+    "QDockWidget"
 };
+
+
+static const std::set<std::string> KF6Types = {
+    "TridentuApplication",
+    "QApplication",
+    "KXmlGuiWindow",
+    "QMainWindow",
+    "KPageDialog",
+};
+
 
 static const std::map<std::string, KSharpLib> KSharpLibRegistry = {
 
+};
+static const std::set<std::string> KSharpWidgetBases = {
+    "KXmlGuiWindow", "KPageDialog", "QMainWindow",
+    "QDialog", "QWidget", "QDockWidget",
+    "QLabel", "QPushButton", "QLineEdit",
+    "QTextEdit", "QComboBox", "QCheckBox",
+    "QRadioButton", "QSlider", "QSpinBox",
+    "QVBoxLayout", "QHBoxLayout", "QGridLayout"
+};
+
+
+static const std::set<std::string> KSharpValueTypes = {
+    "QString", "QChar", "QList", "QMap", "QSet",
+    "QStringList", "QVector", "QHash", "QVariant",
+    "int", "float", "double", "bool", "char"
+};
+
+static const std::set<std::string> KSharpLayoutTypes = {
+    "QVBoxLayout", "QHBoxLayout", "QGridLayout"
+};
+
+static std::map<std::string, std::map<std::string, std::string>> KSharpSignalMap = {
+    { "QPushButton", {
+        { "clicked",  "clicked" },
+        { "pressed",  "pressed" },
+        { "released", "released" },
+    }},
+    { "QLineEdit", {
+        { "textChanged",    "textChanged" },
+        { "returnPressed",  "returnPressed" },
+        { "editingFinished","editingFinished" },
+    }},
+    { "QCheckBox", {
+        { "toggled",        "toggled" },
+        { "stateChanged",   "stateChanged" },
+    }},
+    { "QSlider", {
+        { "valueChanged",   "valueChanged" },
+        { "sliderMoved",    "sliderMoved" },
+    }},
+    { "QComboBox", {
+        { "currentIndexChanged", "currentIndexChanged" },
+        { "currentTextChanged",  "currentTextChanged" },
+    }},
+    { "QSpinBox", {
+        { "valueChanged", "valueChanged" },
+    }},
 };
 
 extern std::map<std::string, std::string> dynamicTypeMap;

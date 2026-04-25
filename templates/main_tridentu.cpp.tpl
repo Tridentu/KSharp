@@ -21,6 +21,7 @@ int main(int argc, char** argv) {
                          KAboutLicense::GPL
     );
     KAboutData::setApplicationData(aboutData);
+    KLocalizedString::setApplicationDomain("{{ projectName }}");
 
     QStringList args = app.arguments();
     {{ entryPointBody }}

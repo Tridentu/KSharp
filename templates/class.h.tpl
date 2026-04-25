@@ -41,6 +41,8 @@ class {{ className }} : {{ modifier }} {{ parent }} {
 public:
 {%- if isAppClass %}
     explicit {{ className }}(int& argc, char** argv);
+{%- else if isWidgetClass %}
+    explicit {{ className }}(QWidget* parent = nullptr);
 {%- else %}
     explicit {{ className }}(QObject* parent = nullptr);
 {%- endif %}

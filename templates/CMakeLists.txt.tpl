@@ -8,10 +8,12 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(Qt6_NO_VULKAN ON)
 
-
-find_package(Qt6 REQUIRED COMPONENTS Core{% for flag in linkerFlags %} {{ flag }}{% endfor %} Widgets)
+find_package(Qt6 REQUIRED COMPONENTS Core{% if needsWidgets %} Widgets{% endif %}{% for flag in linkerFlags %} {{ flag }}{% endfor %})
 {%- if needsKF6 %}
+find_package(ECM REQUIRED NO_MODULE)
+set(CMAKE_MODULE_PATH ${ECM_MODULE_PATH})
 find_package(KF6 REQUIRED COMPONENTS CoreAddons I18n XmlGui)
 {%- endif %}
 
@@ -36,3 +38,5 @@ target_link_libraries({{ projectName }} PRIVATE
     KF6::XmlGui
 {%- endif %}
 )
+
+

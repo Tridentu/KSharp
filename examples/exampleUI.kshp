@@ -1,0 +1,38 @@
+using Sys;
+using Sys.Tridentu.UI;
+using Sys.Application;
+
+namespace MyApp {
+    public class MyWindow : KDEWindow {
+
+        public property PushButton ClickMe;
+        public property Label Title;
+        public property VBoxLayout Layout;
+        public property Widget Container;
+
+        public MyWindow(){
+            this.Container = new Widget();
+            this.Title = new Label("Hello from K#!");
+            this.ClickMe = new PushButton("Click Me");
+            this.Layout = new VBoxLayout(this.Container);
+            this.Layout.addWidget(this.Title);
+            this.Layout.addWidget(this.ClickMe);
+            this.setCentralWidget(this.Container);
+            this.resize(400, 300);
+            this.ClickMe.clicked += this.OnClickMe;
+        }
+
+        public void OnClickMe(){
+
+            Console.WriteLine("Hello GUI!");
+
+        }
+    }
+
+    public class App : TridentuApplication {
+        public static void Main(string[] args) {
+            MyWindow window = new MyWindow();
+            window.show();
+        }
+    }
+}

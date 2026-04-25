@@ -1,0 +1,240 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE language SYSTEM "language.dtd">
+<language name="K#" version="1.0" kateversion="5.0" section="Sources"
+          extensions="*.kshp" mimetype="text/x-ksharp"
+          author="Tridentu Project" license="GPL">
+
+    <highlighting>
+
+        <list name="keywords">
+            <item>namespace</item>
+            <item>class</item>
+            <item>interface</item>
+            <item>enum</item>
+            <item>property</item>
+            <item>using</item>
+            <item>new</item>
+            <item>this</item>
+            <item>return</item>
+            <item>if</item>
+            <item>else</item>
+            <item>foreach</item>
+            <item>in</item>
+            <item>while</item>
+            <item>for</item>
+            <item>do</item>
+            <item>switch</item>
+            <item>case</item>
+            <item>break</item>
+            <item>continue</item>
+            <item>try</item>
+            <item>catch</item>
+            <item>throw</item>
+            <item>null</item>
+            <item>true</item>
+            <item>false</item>
+            <item>is</item>
+            <item>as</item>
+            <item>var</item>
+        </list>
+
+        <list name="modifiers">
+            <item>public</item>
+            <item>private</item>
+            <item>protected</item>
+            <item>static</item>
+            <item>abstract</item>
+            <item>virtual</item>
+            <item>override</item>
+        </list>
+
+        <list name="qt_keywords">
+            <item>slot</item>
+            <item>signal</item>
+        </list>
+
+        <list name="types">
+            <item>string</item>
+            <item>int</item>
+            <item>float</item>
+            <item>double</item>
+            <item>bool</item>
+            <item>char</item>
+            <item>void</item>
+            <item>List</item>
+            <item>Dictionary</item>
+            <item>HashSet</item>
+        </list>
+
+        <list name="stdlib">
+            <item>Console</item>
+            <item>Math</item>
+            <item>String</item>
+            <item>Environment</item>
+            <item>File</item>
+            <item>Directory</item>
+            <item>MessageBox</item>
+        </list>
+
+        <contexts>
+
+            <context name="Normal" attribute="Normal Text" lineEndContext="#stay">
+
+                <!-- Line comments -->
+                <Detect2Chars attribute="Comment" context="LineComment" char="/" char1="/"/>
+
+                <!-- Block comments -->
+                <Detect2Chars attribute="Comment" context="BlockComment" char="/" char1="*"/>
+
+                <!-- Hash comments -->
+                <DetectChar attribute="Comment" context="LineComment" char="#"/>
+
+                <!-- Interpolated strings -->
+                <Detect2Chars attribute="String" context="InterpolatedString" char="$" char1="&quot;"/>
+
+                <!-- Regular strings -->
+                <DetectChar attribute="String" context="String" char="&quot;"/>
+
+                <!-- Keywords -->
+                <WordDetect attribute="Keyword" context="#stay" String="namespace"/>
+                <WordDetect attribute="Keyword" context="#stay" String="class"/>
+                <WordDetect attribute="Keyword" context="#stay" String="interface"/>
+                <WordDetect attribute="Keyword" context="#stay" String="enum"/>
+                <WordDetect attribute="Keyword" context="#stay" String="property"/>
+                <WordDetect attribute="Keyword" context="#stay" String="using"/>
+                <WordDetect attribute="Keyword" context="#stay" String="new"/>
+                <WordDetect attribute="Keyword" context="#stay" String="this"/>
+                <WordDetect attribute="Keyword" context="#stay" String="return"/>
+                <WordDetect attribute="Keyword" context="#stay" String="if"/>
+                <WordDetect attribute="Keyword" context="#stay" String="else"/>
+                <WordDetect attribute="Keyword" context="#stay" String="foreach"/>
+                <WordDetect attribute="Keyword" context="#stay" String="in"/>
+                <WordDetect attribute="Keyword" context="#stay" String="while"/>
+                <WordDetect attribute="Keyword" context="#stay" String="for"/>
+                <WordDetect attribute="Keyword" context="#stay" String="do"/>
+                <WordDetect attribute="Keyword" context="#stay" String="switch"/>
+                <WordDetect attribute="Keyword" context="#stay" String="case"/>
+                <WordDetect attribute="Keyword" context="#stay" String="break"/>
+                <WordDetect attribute="Keyword" context="#stay" String="continue"/>
+                <WordDetect attribute="Keyword" context="#stay" String="try"/>
+                <WordDetect attribute="Keyword" context="#stay" String="catch"/>
+                <WordDetect attribute="Keyword" context="#stay" String="throw"/>
+                <WordDetect attribute="Keyword" context="#stay" String="null"/>
+                <WordDetect attribute="Keyword" context="#stay" String="true"/>
+                <WordDetect attribute="Keyword" context="#stay" String="false"/>
+                <WordDetect attribute="Keyword" context="#stay" String="is"/>
+                <WordDetect attribute="Keyword" context="#stay" String="as"/>
+                <WordDetect attribute="Keyword" context="#stay" String="var"/>
+
+                <!-- Modifiers -->
+                <WordDetect attribute="Modifier" context="#stay" String="public"/>
+                <WordDetect attribute="Modifier" context="#stay" String="private"/>
+                <WordDetect attribute="Modifier" context="#stay" String="protected"/>
+                <WordDetect attribute="Modifier" context="#stay" String="static"/>
+                <WordDetect attribute="Modifier" context="#stay" String="abstract"/>
+                <WordDetect attribute="Modifier" context="#stay" String="virtual"/>
+                <WordDetect attribute="Modifier" context="#stay" String="override"/>
+
+                <!-- Qt-specific keywords -->
+                <WordDetect attribute="Qt Keyword" context="#stay" String="slot"/>
+                <WordDetect attribute="Qt Keyword" context="#stay" String="signal"/>
+
+                <!-- Built-in types -->
+                <WordDetect attribute="Data Type" context="#stay" String="string"/>
+                <WordDetect attribute="Data Type" context="#stay" String="int"/>
+                <WordDetect attribute="Data Type" context="#stay" String="float"/>
+                <WordDetect attribute="Data Type" context="#stay" String="double"/>
+                <WordDetect attribute="Data Type" context="#stay" String="bool"/>
+                <WordDetect attribute="Data Type" context="#stay" String="char"/>
+                <WordDetect attribute="Data Type" context="#stay" String="void"/>
+                <WordDetect attribute="Data Type" context="#stay" String="var"/>
+                <WordDetect attribute="Data Type" context="#stay" String="List"/>
+                <WordDetect attribute="Data Type" context="#stay" String="Dictionary"/>
+                <WordDetect attribute="Data Type" context="#stay" String="HashSet"/>
+
+                <!-- Standard library -->
+                <WordDetect attribute="Stdlib" context="#stay" String="Console"/>
+                <WordDetect attribute="Stdlib" context="#stay" String="Math"/>
+                <WordDetect attribute="Stdlib" context="#stay" String="String"/>
+                <WordDetect attribute="Stdlib" context="#stay" String="Environment"/>
+                <WordDetect attribute="Stdlib" context="#stay" String="File"/>
+                <WordDetect attribute="Stdlib" context="#stay" String="Directory"/>
+                <WordDetect attribute="Stdlib" context="#stay" String="MessageBox"/>
+
+                <!-- Numbers -->
+                <Float attribute="Float" context="#stay"/>
+                <Int attribute="Decimal" context="#stay"/>
+
+                <!-- Operators -->
+                <AnyChar attribute="Operator" context="#stay" String="+-*/%=&lt;&gt;!&amp;|^~?:"/>
+
+            </context>
+
+            <!-- Line comment -->
+            <context name="LineComment" attribute="Comment" lineEndContext="#pop">
+                <DetectSpaces/>
+                <DetectIdentifier/>
+            </context>
+
+            <!-- Block comment -->
+            <context name="BlockComment" attribute="Comment" lineEndContext="#stay">
+                <Detect2Chars attribute="Comment" context="#pop" char="*" char1="/"/>
+            </context>
+
+            <!-- Regular string -->
+            <context name="String" attribute="String" lineEndContext="#pop">
+                <DetectChar attribute="String" context="#pop" char="&quot;"/>
+                <Detect2Chars attribute="String Char" context="#stay" char="\" char1="n"/>
+                <Detect2Chars attribute="String Char" context="#stay" char="\" char1="t"/>
+                <Detect2Chars attribute="String Char" context="#stay" char="\" char1="\"/>
+                <Detect2Chars attribute="String Char" context="#stay" char="\" char1="&quot;"/>
+            </context>
+
+            <!-- Interpolated string $"..." -->
+            <context name="InterpolatedString" attribute="String" lineEndContext="#pop">
+                <DetectChar attribute="String" context="#pop" char="&quot;"/>
+                <!-- Highlight {expr} inside interpolated strings -->
+                <DetectChar attribute="Interpolation Bracket" context="Interpolation" char="{"/>
+                <Detect2Chars attribute="String Char" context="#stay" char="\" char1="n"/>
+                <Detect2Chars attribute="String Char" context="#stay" char="\" char1="t"/>
+                <Detect2Chars attribute="String Char" context="#stay" char="\" char1="\"/>
+            </context>
+
+            <!-- Interpolation expression {expr} -->
+            <context name="Interpolation" attribute="Interpolation" lineEndContext="#stay">
+                <DetectChar attribute="Interpolation Bracket" context="#pop" char="}"/>
+                <WordDetect attribute="Keyword" context="#stay" String="this"/>
+                <DetectChar attribute="Operator" context="#stay" char="."/>
+                <DetectIdentifier attribute="Interpolation" context="#stay"/>
+            </context>
+
+        </contexts>
+
+        <itemDatas>
+            <itemData name="Normal Text"          defStyleNum="dsNormal"      bold="false" italic="false"/>
+            <itemData name="Keyword"              defStyleNum="dsKeyword"     bold="true"  italic="false"/>
+            <itemData name="Modifier"             defStyleNum="dsKeyword"     bold="true"  italic="false"/>
+            <itemData name="Qt Keyword"           defStyleNum="dsBuiltIn"     bold="true"  italic="true"/>
+            <itemData name="Data Type"            defStyleNum="dsDataType"    bold="false" italic="false"/>
+            <itemData name="Stdlib"               defStyleNum="dsFunction"    bold="false" italic="false"/>
+            <itemData name="String"               defStyleNum="dsString"      bold="false" italic="false"/>
+            <itemData name="String Char"          defStyleNum="dsSpecialChar" bold="false" italic="false"/>
+            <itemData name="Interpolation"        defStyleNum="dsVariable"    bold="false" italic="false"/>
+            <itemData name="Interpolation Bracket" defStyleNum="dsSpecialChar" bold="true" italic="false"/>
+            <itemData name="Comment"              defStyleNum="dsComment"     bold="false" italic="true"/>
+            <itemData name="Decimal"              defStyleNum="dsDecVal"      bold="false" italic="false"/>
+            <itemData name="Float"                defStyleNum="dsFloat"       bold="false" italic="false"/>
+            <itemData name="Operator"             defStyleNum="dsOperator"    bold="false" italic="false"/>
+        </itemDatas>
+
+    </highlighting>
+
+    <general>
+        <comments>
+            <comment name="singleLine" start="//"/>
+            <comment name="multiLine" start="/*" end="*/"/>
+        </comments>
+        <keywords casesensitive="1"/>
+    </general>
+
+</language>
