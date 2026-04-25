@@ -22,7 +22,7 @@ namespace MyApp {
             this.ClickMe.clicked += this.OnClickMe;
         }
 
-        public void OnClickMe(){
+        public slot void OnClickMe(){
 
             Console.WriteLine("Hello GUI!");
 
