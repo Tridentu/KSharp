@@ -8,6 +8,7 @@
  #include <map>
  #include <regex>
  #include "src/KSharpContext.h"
+ #include "src/KSharpHelpers.h"
  #include <inja/inja.hpp>
  #include <stdexcept>
  #include <nlohmann/json.hpp>
@@ -757,6 +758,9 @@ void add_method_to_class(KSharpMethod m) {
             hasEntryPoint = true;
             parsedClass.entryPointBody = process_body(m.body, true);
             // Don't push it into methods — it won't become a class method in the output
+    } else if (m.name == "Main" && m.returnType == "void" && !m.isStatic) {
+        ksharp_semantic_warn("'Main' method is not static — it will be treated as a regular method, not an entry point",
+        parsedClass.name);
     } else {
         m.body = process_body(m.body);
         parsedClass.methods.push_back(m);
@@ -850,6 +854,12 @@ std::string getDefaultValue(const std::string& cppType) {
 
     for (const auto& prop : cls.properties) {
         std::string mapped = mapType(prop.type);
+        if (mapped == prop.type &&
+            KSharpPrimitives.count(prop.type) == 0 &&
+            globalClassRegistry.count(prop.type) == 0) {
+            ksharp_semantic_warn("Property type '" + prop.type + "' is unrecognized — "
+                "output may not compile correctly", cls.name + "::" + prop.name);
+        }
         if (mapped.find("QList") != std::string::npos) header_includes.insert("QList");
         if (mapped == "QStringList") header_includes.insert("QStringList");
     }
@@ -857,6 +867,7 @@ std::string getDefaultValue(const std::string& cppType) {
     for (const auto& prop : cls.properties) {
         std::string mappedType = mapType(prop.type);
         // Look up header for this type
+
         for (const auto& [ns, types] : KSharpTypeRegistry) {
             for (const auto& [kType, data] : types) {
                 if (data.cppType == mappedType || kType == prop.type) {
@@ -1388,6 +1399,15 @@ class_declaration:
         parsedClass.namespaceId = currentNamespaceId;
         parsedClass.accessModifier = $1;
         parsedClass.parentClass = mapParentClass($5);
+        if (parsedClass.parentClass == $5) {
+            // mapParentClass returned it unchanged — check if it's a known user class
+            bool knownClass = globalClassRegistry.count($5) > 0;
+            if (!knownClass) {
+                ksharp_semantic_warn(std::string("Unknown parent class '") + $5 +
+                    "' — not in type registry or previously defined classes",
+                    parsedClass.name);
+            }
+        }
         free($1); free($3); free($5);
     } class_body RBRACE {
         printf("[K#]: Generating Qt/KDE C++ for class: %s\n", parsedClass.name.c_str());
@@ -1695,8 +1715,34 @@ property_declaration:
     ;
 %%
 
-void yyerror(const char *s) {
-    extern char* yytext; // The token that caused the error
-    extern int yylineno; // You may need %option yylineno in lexer
-    fprintf(stderr, "[K#]: %s at token '%s' (line %d)\n", s, yytext, yylineno);
+void yyerror(const char* s) {
+    extern char* yytext;
+    extern int yylineno;
+
+    std::string token = yytext ? yytext : "";
+    std::string hint = "";
+    std::string context = "";
+
+    // Context
+    if (!parsedClass.name.empty())
+        context = " in class '" + parsedClass.name + "'";
+    else if (!currentNamespaceId.empty())
+        context = " in namespace '" + currentNamespaceId + "'";
+
+    // Hints
+    if (token == "{") {
+        if (!parsedClass.name.empty())
+            hint = " — missing return type, access modifier, or malformed member declaration?";
+        else
+            hint = " — missing namespace or class declaration?";
+    }
+    else if (token == "}") hint = " — unexpected closing brace, check for missing semicolons or unmatched braces";
+    else if (token == ";") hint = " — unexpected semicolon, check for malformed declaration";
+    else if (token == "(") hint = " — unexpected '(', check method signature";
+    else if (token == ")") hint = " — unexpected ')', check for mismatched parentheses";
+    else if (token == "=") hint = " — unexpected '=', check property or variable declaration";
+    else if (token == "") hint = " — unexpected end of file, check for unclosed braces";
+
+    fprintf(stderr, "[K#] Syntax Error%s: unexpected '%s'%s (line %d)\n",
+        context.c_str(), token.c_str(), hint.c_str(), yylineno);
 }

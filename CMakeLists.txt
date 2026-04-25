@@ -23,6 +23,7 @@ FLEX_TARGET(KSharpLexer ${LEXER_SRC} "${CMAKE_CURRENT_BINARY_DIR}/KSharpLexer.cp
 ADD_FLEX_BISON_DEPENDENCY(KSharpLexer KSharpParser)
 
 add_executable(ksharpc
+    src/KSharpHelpers.cpp
     src/main.cpp
     ${BISON_KSharpParser_OUTPUTS}
     ${FLEX_KSharpLexer_OUTPUTS}
